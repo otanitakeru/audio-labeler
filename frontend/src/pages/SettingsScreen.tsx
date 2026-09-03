@@ -1,0 +1,116 @@
+import { useState } from 'react'
+import ChannelInput from '../components/ChannelInput'
+import NumberInput from '../components/NumberInput'
+import { useAudioSession } from '../hooks/useAudioSession'
+import {
+  DEFAULT_MAIN_WAVEFORM_HEIGHT,
+  DEFAULT_MINIMAP_HEIGHT,
+  MAX_MAIN_WAVEFORM_HEIGHT,
+  MAX_MINIMAP_HEIGHT,
+  MIN_MAIN_WAVEFORM_HEIGHT,
+  MIN_MINIMAP_HEIGHT,
+  useDisplaySettings,
+} from '../hooks/useDisplaySettings'
+
+const CATEGORIES = ['音声読み込み', '表示設定'] as const
+type Category = (typeof CATEGORIES)[number]
+
+function SettingsScreen() {
+  const [category, setCategory] = useState<Category>(CATEGORIES[0])
+  const { uploadId, channel, channelCount, setChannel } = useAudioSession()
+  const { mainWaveformHeight, setMainWaveformHeight, minimapHeight, setMinimapHeight } = useDisplaySettings()
+  const channelOutOfRange = uploadId !== null && (channel < 0 || channel >= channelCount)
+
+  return (
+    <div className="flex flex-1 gap-8">
+      <nav className="w-48 shrink-0 border-r border-gray-300 pr-4">
+        <ul className="flex flex-col gap-1">
+          {CATEGORIES.map((c) => (
+            <li key={c}>
+              <button
+                type="button"
+                onClick={() => setCategory(c)}
+                className={`w-full cursor-pointer rounded px-2 py-1 text-left font-semibold ${
+                  c === category ? 'bg-gray-200 text-gray-900' : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                {c}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      {category === '音声読み込み' && (
+        <div className="flex flex-1 flex-col gap-6">
+          <h2 className="m-0 text-xl font-semibold text-gray-900">音声読み込み</h2>
+
+          <div className="flex flex-col gap-2">
+            <div className="font-semibold text-gray-900">チャンネル</div>
+            <p className="m-0 text-sm text-gray-500">
+              読み込む音声ファイルのうち、使用するチャンネル番号を指定します。
+            </p>
+            <ChannelInput channel={channel} onChangeChannel={setChannel} />
+            {channelOutOfRange && (
+              <p className="m-0 text-sm text-red-600">
+                読み込んだファイルに ch{channel} は存在しません(0〜{channelCount - 1}で指定してください)
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {category === '表示設定' && (
+        <div className="flex flex-1 flex-col gap-6">
+          <h2 className="m-0 text-xl font-semibold text-gray-900">表示設定</h2>
+
+          <div className="flex flex-col gap-2">
+            <div className="font-semibold text-gray-900">波形の高さ</div>
+            <p className="m-0 text-sm text-gray-500">編集画面で拡大表示する波形の縦幅を調整します。</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <NumberInput
+                unit="px"
+                min={MIN_MAIN_WAVEFORM_HEIGHT}
+                max={MAX_MAIN_WAVEFORM_HEIGHT}
+                value={mainWaveformHeight}
+                onChange={setMainWaveformHeight}
+              />
+              <button
+                type="button"
+                onClick={() => setMainWaveformHeight(DEFAULT_MAIN_WAVEFORM_HEIGHT)}
+                className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                デフォルトに戻す
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="font-semibold text-gray-900">全体波形の高さ</div>
+            <p className="m-0 text-sm text-gray-500">
+              音声全体を縮小表示する波形(現在の表示範囲がハイライトされます)の縦幅を調整します。
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <NumberInput
+                unit="px"
+                min={MIN_MINIMAP_HEIGHT}
+                max={MAX_MINIMAP_HEIGHT}
+                value={minimapHeight}
+                onChange={setMinimapHeight}
+              />
+              <button
+                type="button"
+                onClick={() => setMinimapHeight(DEFAULT_MINIMAP_HEIGHT)}
+                className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                デフォルトに戻す
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default SettingsScreen

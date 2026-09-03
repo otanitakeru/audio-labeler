@@ -1,0 +1,55 @@
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile
+
+from app.config import UPLOAD_DIR
+from app.io.audio_io import AudioFileError, extract_channel_as_wav_bytes, get_audio_info
+from app.models import UploadedAudioInfo
+
+router = APIRouter(prefix="/api/audio", tags=["audio"])
+
+
+def _upload_path(upload_id: str) -> Path:
+    return UPLOAD_DIR / f"{upload_id}.wav"
+
+
+@router.post("/uploads")
+async def upload_audio_file(file: UploadFile = File(...)) -> UploadedAudioInfo:
+    if not (file.filename or "").lower().endswith(".wav"):
+        raise HTTPException(status_code=400, detail="WAV形式のファイルを選択してください")
+
+    upload_id = uuid.uuid4().hex
+    path = _upload_path(upload_id)
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(await file.read())
+
+    try:
+        duration_sec, sample_rate, channel_count = get_audio_info(path)
+    except AudioFileError as e:
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return UploadedAudioInfo(
+        upload_id=upload_id,
+        filename=file.filename,
+        duration_sec=duration_sec,
+        sample_rate=sample_rate,
+        channel_count=channel_count,
+    )
+
+
+@router.get("/uploads/{upload_id}")
+def get_uploaded_audio(upload_id: str, channel: int = 0) -> Response:
+    path = _upload_path(upload_id)
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="アップロードした音声が見つかりません。もう一度ファイルを選択してください。",
+        )
+
+    try:
+        wav_bytes = extract_channel_as_wav_bytes(path, channel)
+    except AudioFileError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return Response(content=wav_bytes, media_type="audio/wav")

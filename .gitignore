@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+
+# 動作確認用の音声データ(リポジトリには含めない)
+mock-data/
+
+# Claude Codeのローカル設定(個人環境依存)
+.claude/settings.local.json
+
+# Python
+**/__pycache__/
+*.pyc
+
+# Node
+**/node_modules/
+**/dist/

@@ -22,12 +22,7 @@ const WHEEL_ZOOM_FACTOR = 1.1;
 
 // Cmd/Ctrl+スクロール1ステップぶん、現在値をズーム倍率で拡大縮小する(min〜maxにクランプ)。
 // 横方向(zoom)・縦方向(verticalZoom)のどちらのホイールズームでも同じ計算を使う
-function applyWheelZoomStep(
-  prev: number,
-  deltaY: number,
-  min: number,
-  max: number,
-): number {
+function applyWheelZoomStep(prev: number, deltaY: number, min: number, max: number): number {
   const next = deltaY < 0 ? prev * WHEEL_ZOOM_FACTOR : prev / WHEEL_ZOOM_FACTOR;
   return Math.min(max, Math.max(min, next));
 }
@@ -69,13 +64,7 @@ type UseWavesurferResult = {
 export function useWavesurfer(
   containerRef: React.RefObject<HTMLDivElement | null>,
   audioUrl: string | null,
-  {
-    segments,
-    onRegionCreated,
-    mainWaveformHeight,
-    minimapHeight,
-    amplitudeAxisRef,
-  }: UseWavesurferOptions,
+  { segments, onRegionCreated, mainWaveformHeight, minimapHeight, amplitudeAxisRef }: UseWavesurferOptions,
 ): UseWavesurferResult {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
@@ -225,14 +214,7 @@ export function useWavesurfer(
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      setVerticalZoom((prev) =>
-        applyWheelZoomStep(
-          prev,
-          e.deltaY,
-          MIN_VERTICAL_ZOOM,
-          MAX_VERTICAL_ZOOM,
-        ),
-      );
+      setVerticalZoom((prev) => applyWheelZoomStep(prev, e.deltaY, MIN_VERTICAL_ZOOM, MAX_VERTICAL_ZOOM));
     };
     axis.addEventListener("wheel", onWheel, { passive: false });
     return () => axis.removeEventListener("wheel", onWheel);

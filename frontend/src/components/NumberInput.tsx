@@ -1,10 +1,10 @@
 type NumberInputProps = {
-  unit?: string
-  min: number
-  max: number
-  value: number
-  onChange: (value: number) => void
-}
+  unit?: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (value: number) => void;
+};
 
 function NumberInput({ unit, min, max, value, onChange }: NumberInputProps) {
   return (
@@ -19,7 +19,7 @@ function NumberInput({ unit, min, max, value, onChange }: NumberInputProps) {
       />
       {unit}
     </label>
-  )
+  );
 }
 
-export default NumberInput
+export default NumberInput;

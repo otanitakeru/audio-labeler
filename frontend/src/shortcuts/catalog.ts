@@ -42,7 +42,8 @@ export function formatKeyCombo(target: KeyCombo): string {
   if (target.shift) parts.push("Shift");
   if (target.meta) parts.push("⌘");
   const normalizedKey = target.key.toLowerCase();
-  const keyLabel = KEY_DISPLAY_NAMES[normalizedKey] ?? (target.key.length === 1 ? target.key.toUpperCase() : target.key);
+  const keyLabel =
+    KEY_DISPLAY_NAMES[normalizedKey] ?? (target.key.length === 1 ? target.key.toUpperCase() : target.key);
   parts.push(keyLabel);
   return parts.join(" + ");
 }

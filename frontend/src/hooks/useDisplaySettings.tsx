@@ -20,9 +20,7 @@ type DisplaySettingsState = {
 const DisplaySettingsContext = createContext<DisplaySettingsState | null>(null);
 
 export function DisplaySettingsProvider({ children }: { children: ReactNode }) {
-  const [mainWaveformHeight, setMainWaveformHeight] = useState(
-    DEFAULT_MAIN_WAVEFORM_HEIGHT,
-  );
+  const [mainWaveformHeight, setMainWaveformHeight] = useState(DEFAULT_MAIN_WAVEFORM_HEIGHT);
   const [minimapHeight, setMinimapHeight] = useState(DEFAULT_MINIMAP_HEIGHT);
 
   return (
@@ -41,9 +39,6 @@ export function DisplaySettingsProvider({ children }: { children: ReactNode }) {
 
 export function useDisplaySettings(): DisplaySettingsState {
   const context = useContext(DisplaySettingsContext);
-  if (!context)
-    throw new Error(
-      "useDisplaySettings must be used within a DisplaySettingsProvider",
-    );
+  if (!context) throw new Error("useDisplaySettings must be used within a DisplaySettingsProvider");
   return context;
 }

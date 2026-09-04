@@ -1,64 +1,57 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { getAudioStreamUrl } from '../api/audioApi'
-import SegmentLabelForm from '../components/SegmentLabelForm'
-import TransportControls from '../components/TransportControls'
-import Waveform from '../components/Waveform'
-import { useAudioSession } from '../hooks/useAudioSession'
-import { useDisplaySettings } from '../hooks/useDisplaySettings'
-import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
-import { useSegments } from '../hooks/useSegments'
-import { useWavesurfer } from '../hooks/useWavesurfer'
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getAudioStreamUrl } from "../api/audioApi";
+import SegmentLabelForm from "../components/SegmentLabelForm";
+import TransportControls from "../components/TransportControls";
+import Waveform from "../components/Waveform";
+import { useAudioSession } from "../hooks/useAudioSession";
+import { useDisplaySettings } from "../hooks/useDisplaySettings";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { useSegments } from "../hooks/useSegments";
+import { useWavesurfer } from "../hooks/useWavesurfer";
 
-type PendingSelection = { startSec: number; endSec: number }
+type PendingSelection = { startSec: number; endSec: number };
 
 function EditScreen() {
-  const { uploadId, filename, channelCount, channel } = useAudioSession()
-  const navigate = useNavigate()
-  const waveformContainerRef = useRef<HTMLDivElement>(null)
-  const amplitudeAxisRef = useRef<HTMLDivElement>(null)
-  const { segments, addSegment } = useSegments()
-  const { mainWaveformHeight, minimapHeight } = useDisplaySettings()
-  const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null)
+  const { uploadId, filename, channelCount, channel } = useAudioSession();
+  const navigate = useNavigate();
+  const waveformContainerRef = useRef<HTMLDivElement>(null);
+  const amplitudeAxisRef = useRef<HTMLDivElement>(null);
+  const { segments, addSegment } = useSegments();
+  const { mainWaveformHeight, minimapHeight } = useDisplaySettings();
+  const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
 
   useEffect(() => {
-    if (!uploadId) navigate('/', { replace: true })
-  }, [uploadId, navigate])
+    if (!uploadId) navigate("/", { replace: true });
+  }, [uploadId, navigate]);
 
-  const audioUrl = uploadId ? getAudioStreamUrl(uploadId, channel) : null
-  const {
-    isReady,
-    isPlaying,
-    currentTime,
-    duration,
-    visiblePeakAmplitude,
-    togglePlay,
-    clearPendingRegion,
-  } = useWavesurfer(waveformContainerRef, audioUrl, {
-    segments,
-    onRegionCreated: (startSec, endSec) => setPendingSelection({ startSec, endSec }),
-    mainWaveformHeight,
-    minimapHeight,
-    amplitudeAxisRef,
-  })
+  const audioUrl = uploadId ? getAudioStreamUrl(uploadId, channel) : null;
+  const { isReady, isPlaying, currentTime, duration, visiblePeakAmplitude, togglePlay, clearPendingRegion } =
+    useWavesurfer(waveformContainerRef, audioUrl, {
+      segments,
+      onRegionCreated: (startSec, endSec) => setPendingSelection({ startSec, endSec }),
+      mainWaveformHeight,
+      minimapHeight,
+      amplitudeAxisRef,
+    });
 
-  useKeyboardShortcuts({ togglePlay })
+  useKeyboardShortcuts({ togglePlay });
 
-  if (!uploadId) return null
+  if (!uploadId) return null;
 
   const handleCancelSelection = () => {
-    clearPendingRegion()
-    setPendingSelection(null)
-  }
+    clearPendingRegion();
+    setPendingSelection(null);
+  };
 
   const handleSubmitLabel = (label: string): string | null => {
-    if (!pendingSelection) return null
-    const result = addSegment(pendingSelection.startSec, pendingSelection.endSec, label)
-    if (!result.success) return result.error
-    clearPendingRegion()
-    setPendingSelection(null)
-    return null
-  }
+    if (!pendingSelection) return null;
+    const result = addSegment(pendingSelection.startSec, pendingSelection.endSec, label);
+    if (!result.success) return result.error;
+    clearPendingRegion();
+    setPendingSelection(null);
+    return null;
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -101,7 +94,7 @@ function EditScreen() {
         />
       )}
     </div>
-  )
+  );
 }
 
-export default EditScreen
+export default EditScreen;

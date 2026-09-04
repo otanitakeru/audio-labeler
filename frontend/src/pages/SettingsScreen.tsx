@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import ChannelInput from '../components/ChannelInput'
-import NumberInput from '../components/NumberInput'
-import ShortcutBindingRow from '../components/ShortcutBindingRow'
-import { useAudioSession } from '../hooks/useAudioSession'
+import { useState } from "react";
+import ChannelInput from "../components/ChannelInput";
+import NumberInput from "../components/NumberInput";
+import ShortcutBindingRow from "../components/ShortcutBindingRow";
+import { useAudioSession } from "../hooks/useAudioSession";
 import {
   DEFAULT_MAIN_WAVEFORM_HEIGHT,
   DEFAULT_MINIMAP_HEIGHT,
@@ -11,17 +11,17 @@ import {
   MIN_MAIN_WAVEFORM_HEIGHT,
   MIN_MINIMAP_HEIGHT,
   useDisplaySettings,
-} from '../hooks/useDisplaySettings'
-import { SHORTCUT_CATALOG } from '../shortcuts/catalog'
+} from "../hooks/useDisplaySettings";
+import { SHORTCUT_CATALOG } from "../shortcuts/catalog";
 
-const CATEGORIES = ['音声読み込み', '表示設定', 'ショートカットキー'] as const
-type Category = (typeof CATEGORIES)[number]
+const CATEGORIES = ["音声読み込み", "表示設定", "ショートカットキー"] as const;
+type Category = (typeof CATEGORIES)[number];
 
 function SettingsScreen() {
-  const [category, setCategory] = useState<Category>(CATEGORIES[0])
-  const { uploadId, channel, channelCount, setChannel } = useAudioSession()
-  const { mainWaveformHeight, setMainWaveformHeight, minimapHeight, setMinimapHeight } = useDisplaySettings()
-  const channelOutOfRange = uploadId !== null && (channel < 0 || channel >= channelCount)
+  const [category, setCategory] = useState<Category>(CATEGORIES[0]);
+  const { uploadId, channel, channelCount, setChannel } = useAudioSession();
+  const { mainWaveformHeight, setMainWaveformHeight, minimapHeight, setMinimapHeight } = useDisplaySettings();
+  const channelOutOfRange = uploadId !== null && (channel < 0 || channel >= channelCount);
 
   return (
     <div className="flex flex-1 gap-8">
@@ -33,7 +33,7 @@ function SettingsScreen() {
                 type="button"
                 onClick={() => setCategory(c)}
                 className={`w-full cursor-pointer rounded px-2 py-1 text-left font-semibold ${
-                  c === category ? 'bg-gray-200 text-gray-900' : 'text-gray-700 hover:bg-gray-100'
+                  c === category ? "bg-gray-200 text-gray-900" : "text-gray-700 hover:bg-gray-100"
                 }`}
               >
                 {c}
@@ -43,7 +43,7 @@ function SettingsScreen() {
         </ul>
       </nav>
 
-      {category === '音声読み込み' && (
+      {category === "音声読み込み" && (
         <div className="flex flex-1 flex-col gap-6">
           <h2 className="m-0 text-xl font-semibold text-gray-900">音声読み込み</h2>
 
@@ -62,7 +62,7 @@ function SettingsScreen() {
         </div>
       )}
 
-      {category === '表示設定' && (
+      {category === "表示設定" && (
         <div className="flex flex-1 flex-col gap-6">
           <h2 className="m-0 text-xl font-semibold text-gray-900">表示設定</h2>
 
@@ -112,7 +112,7 @@ function SettingsScreen() {
         </div>
       )}
 
-      {category === 'ショートカットキー' && (
+      {category === "ショートカットキー" && (
         <div className="flex flex-1 flex-col gap-6">
           <h2 className="m-0 text-xl font-semibold text-gray-900">ショートカットキー</h2>
 
@@ -126,7 +126,7 @@ function SettingsScreen() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
-export default SettingsScreen
+export default SettingsScreen;

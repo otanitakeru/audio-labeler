@@ -1,24 +1,24 @@
-import { useState } from 'react'
+import { useState } from "react";
 
 type SegmentLabelFormProps = {
-  startSec: number
-  endSec: number
-  onSubmit: (label: string) => string | null
-  onCancel: () => void
-}
+  startSec: number;
+  endSec: number;
+  onSubmit: (label: string) => string | null;
+  onCancel: () => void;
+};
 
 function formatSec(sec: number): string {
-  return sec.toFixed(2)
+  return sec.toFixed(2);
 }
 
 function SegmentLabelForm({ startSec, endSec, onSubmit, onCancel }: SegmentLabelFormProps) {
-  const [label, setLabel] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = () => {
-    const result = onSubmit(label)
-    if (result) setError(result)
-  }
+    const result = onSubmit(label);
+    if (result) setError(result);
+  };
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-gray-300 bg-white p-3">
@@ -32,10 +32,10 @@ function SegmentLabelForm({ startSec, endSec, onSubmit, onCancel }: SegmentLabel
           value={label}
           onChange={(e) => {
             // タブ・改行はフォーマットを壊すため半角スペースに置き換える
-            setLabel(e.target.value.replace(/[\t\n\r]/g, ' '))
+            setLabel(e.target.value.replace(/[\t\n\r]/g, " "));
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSubmit()
+            if (e.key === "Enter") handleSubmit();
           }}
           placeholder="ラベルを入力"
           className="min-w-48 flex-1 rounded-md border border-gray-300 px-2 py-1 text-gray-900"
@@ -57,7 +57,7 @@ function SegmentLabelForm({ startSec, endSec, onSubmit, onCancel }: SegmentLabel
       </div>
       {error && <p className="m-0 text-sm text-red-600">{error}</p>}
     </div>
-  )
+  );
 }
 
-export default SegmentLabelForm
+export default SegmentLabelForm;

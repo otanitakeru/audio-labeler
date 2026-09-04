@@ -4,6 +4,8 @@ type AmplitudeAxisProps = {
   peakAmplitude: number
   mainWaveformHeight: number
   minimapHeight: number
+  // このメモリ上でのCmd/Ctrl+スクロールをverticalZoomに反映するため、useWavesurfer側に公開する
+  ref: React.RefObject<HTMLDivElement | null>
 }
 
 // 中心(0)から端までに置きたい目盛りの目安の数
@@ -21,7 +23,7 @@ function getDecimalsForStep(step: number): number {
   return Math.min(Math.max(-Math.floor(Math.log10(step)), 0), 6)
 }
 
-function AmplitudeAxis({ peakAmplitude, mainWaveformHeight, minimapHeight }: AmplitudeAxisProps) {
+function AmplitudeAxis({ peakAmplitude, mainWaveformHeight, minimapHeight, ref }: AmplitudeAxisProps) {
   const ticks: number[] = [0]
   let decimals = 2
 
@@ -39,6 +41,7 @@ function AmplitudeAxis({ peakAmplitude, mainWaveformHeight, minimapHeight }: Amp
     <div className="flex w-14 shrink-0 flex-col">
       <div style={{ height: minimapHeight }} />
       <div
+        ref={ref}
         className="relative text-right text-xs tabular-nums text-gray-400"
         style={{ height: mainWaveformHeight }}
       >

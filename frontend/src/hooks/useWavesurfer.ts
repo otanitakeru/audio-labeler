@@ -6,15 +6,31 @@ import type { Segment } from "../types";
 
 // メイン波形を拡大表示する際の1秒あたりの初期ピクセル数(全体はMinimapで確認する)
 const DEFAULT_ZOOM = 100;
-export const MIN_ZOOM = 20;
-export const MAX_ZOOM = 500;
+// Cmd/Ctrl+スクロールでの拡大率(1秒あたりのピクセル数)の可動域。UIにスライダーは出さず、
+// ホイール操作でのみ変更する(スライダーだとホイールとの二重の入力経路になるため設けない)
+const MIN_ZOOM = 20;
+const MAX_ZOOM = 1000;
 // 縦方向の拡大率(wavesurferのbarHeight)。1が基準(振幅ピークが枠いっぱい)で、
 // 大きいほど小さな振幅が見やすくなる代わりに大きな振幅は枠からはみ出す
-const DEFAULT_VERTICAL_ZOOM = 1;
-export const MIN_VERTICAL_ZOOM = 1;
-export const MAX_VERTICAL_ZOOM = 10;
+const DEFAULT_VERTICAL_ZOOM = 0.9;
+const MIN_VERTICAL_ZOOM = 0.9;
+const MAX_VERTICAL_ZOOM = 10;
 const PENDING_REGION_COLOR = "rgba(234, 88, 12, 0.3)";
 const SEGMENT_REGION_COLOR = "rgba(37, 99, 235, 0.25)";
+// Cmd/Ctrl+スクロール1ステップあたりのズーム倍率
+const WHEEL_ZOOM_FACTOR = 1.1;
+
+// Cmd/Ctrl+スクロール1ステップぶん、現在値をズーム倍率で拡大縮小する(min〜maxにクランプ)。
+// 横方向(zoom)・縦方向(verticalZoom)のどちらのホイールズームでも同じ計算を使う
+function applyWheelZoomStep(
+  prev: number,
+  deltaY: number,
+  min: number,
+  max: number,
+): number {
+  const next = deltaY < 0 ? prev * WHEEL_ZOOM_FACTOR : prev / WHEEL_ZOOM_FACTOR;
+  return Math.min(max, Math.max(min, next));
+}
 
 function getPeakAmplitude(audioBuffer: AudioBuffer | null): number {
   if (!audioBuffer) return 0;
@@ -34,6 +50,8 @@ type UseWavesurferOptions = {
   onRegionCreated: (startSec: number, endSec: number) => void;
   mainWaveformHeight: number;
   minimapHeight: number;
+  // 縦の目盛り(AmplitudeAxis)上でのCmd/Ctrl+スクロールをverticalZoomに反映するための参照
+  amplitudeAxisRef: React.RefObject<HTMLDivElement | null>;
 };
 
 type UseWavesurferResult = {
@@ -41,10 +59,6 @@ type UseWavesurferResult = {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
-  zoom: number;
-  setZoom: (zoom: number) => void;
-  verticalZoom: number;
-  setVerticalZoom: (verticalZoom: number) => void;
   // 縦軸の目盛りに表示すべき絶対振幅値(0〜1)。normalize:trueとverticalZoomの効果を反映した、
   // 現在枠いっぱいに描画されている振幅の絶対値
   visiblePeakAmplitude: number;
@@ -55,7 +69,13 @@ type UseWavesurferResult = {
 export function useWavesurfer(
   containerRef: React.RefObject<HTMLDivElement | null>,
   audioUrl: string | null,
-  { segments, onRegionCreated, mainWaveformHeight, minimapHeight }: UseWavesurferOptions,
+  {
+    segments,
+    onRegionCreated,
+    mainWaveformHeight,
+    minimapHeight,
+    amplitudeAxisRef,
+  }: UseWavesurferOptions,
 ): UseWavesurferResult {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
@@ -181,6 +201,43 @@ export function useWavesurfer(
     wavesurferRef.current?.setOptions({ barHeight: verticalZoom });
   }, [verticalZoom, isReady]);
 
+  // Cmd/Ctrl+スクロールで横方向(zoom)を拡大縮小する。ブラウザ標準のページズームと
+  // 衝突するため、この組み合わせの時だけpreventDefaultし、通常のスクロールは素通しする
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom((prev) => applyWheelZoomStep(prev, e.deltaY, MIN_ZOOM, MAX_ZOOM));
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, [containerRef]);
+
+  // 縦の目盛り(AmplitudeAxis)上でのCmd/Ctrl+スクロールで縦方向(verticalZoom)を拡大縮小する。
+  // 横方向のホイールズームと同じ操作感にするため、対象要素が違うだけでロジックは共通化している
+  useEffect(() => {
+    const axis = amplitudeAxisRef.current;
+    if (!axis) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setVerticalZoom((prev) =>
+        applyWheelZoomStep(
+          prev,
+          e.deltaY,
+          MIN_VERTICAL_ZOOM,
+          MAX_VERTICAL_ZOOM,
+        ),
+      );
+    };
+    axis.addEventListener("wheel", onWheel, { passive: false });
+    return () => axis.removeEventListener("wheel", onWheel);
+  }, [amplitudeAxisRef]);
+
   const togglePlay = () => {
     wavesurferRef.current?.playPause();
   };
@@ -195,10 +252,6 @@ export function useWavesurfer(
     isPlaying,
     currentTime,
     duration,
-    zoom,
-    setZoom,
-    verticalZoom,
-    setVerticalZoom,
     visiblePeakAmplitude: peakAmplitude / verticalZoom,
     togglePlay,
     clearPendingRegion,

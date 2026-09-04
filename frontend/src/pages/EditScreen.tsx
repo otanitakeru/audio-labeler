@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAudioStreamUrl } from '../api/audioApi'
-import RangeSlider from '../components/RangeSlider'
 import SegmentLabelForm from '../components/SegmentLabelForm'
 import TransportControls from '../components/TransportControls'
 import Waveform from '../components/Waveform'
 import { useAudioSession } from '../hooks/useAudioSession'
 import { useDisplaySettings } from '../hooks/useDisplaySettings'
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useSegments } from '../hooks/useSegments'
-import { MAX_VERTICAL_ZOOM, MAX_ZOOM, MIN_VERTICAL_ZOOM, MIN_ZOOM, useWavesurfer } from '../hooks/useWavesurfer'
+import { useWavesurfer } from '../hooks/useWavesurfer'
 
 type PendingSelection = { startSec: number; endSec: number }
 
@@ -16,6 +16,7 @@ function EditScreen() {
   const { uploadId, filename, channelCount, channel } = useAudioSession()
   const navigate = useNavigate()
   const waveformContainerRef = useRef<HTMLDivElement>(null)
+  const amplitudeAxisRef = useRef<HTMLDivElement>(null)
   const { segments, addSegment } = useSegments()
   const { mainWaveformHeight, minimapHeight } = useDisplaySettings()
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null)
@@ -30,10 +31,6 @@ function EditScreen() {
     isPlaying,
     currentTime,
     duration,
-    zoom,
-    setZoom,
-    verticalZoom,
-    setVerticalZoom,
     visiblePeakAmplitude,
     togglePlay,
     clearPendingRegion,
@@ -42,7 +39,10 @@ function EditScreen() {
     onRegionCreated: (startSec, endSec) => setPendingSelection({ startSec, endSec }),
     mainWaveformHeight,
     minimapHeight,
+    amplitudeAxisRef,
   })
+
+  useKeyboardShortcuts({ togglePlay })
 
   if (!uploadId) return null
 
@@ -67,16 +67,10 @@ function EditScreen() {
         {channelCount > 1 && <span className="text-gray-500">ch {channel}</span>}
       </div>
 
-      {isReady && (
-        <div className="flex flex-wrap justify-end gap-4">
-          <RangeSlider label="縦拡大" min={MIN_VERTICAL_ZOOM} max={MAX_VERTICAL_ZOOM} step={0.1} value={verticalZoom} onChange={setVerticalZoom} />
-          <RangeSlider label="拡大" min={MIN_ZOOM} max={MAX_ZOOM} value={zoom} onChange={setZoom} />
-        </div>
-      )}
-
       <div className="relative">
         <Waveform
           containerRef={waveformContainerRef}
+          amplitudeAxisRef={amplitudeAxisRef}
           peakAmplitude={visiblePeakAmplitude}
           mainWaveformHeight={mainWaveformHeight}
           minimapHeight={minimapHeight}

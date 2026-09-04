@@ -3,6 +3,7 @@ import { Navigate, Route, BrowserRouter as Router, Routes, useNavigate } from 'r
 import AppHeader from './components/AppHeader'
 import { AudioSessionProvider, useAudioSession } from './hooks/useAudioSession'
 import { DisplaySettingsProvider } from './hooks/useDisplaySettings'
+import { ShortcutBindingsProvider } from './hooks/useShortcutBindings'
 import EditScreen from './pages/EditScreen'
 import HomeScreen from './pages/HomeScreen'
 import SettingsScreen from './pages/SettingsScreen'
@@ -42,9 +43,11 @@ function App() {
   return (
     <AudioSessionProvider>
       <DisplaySettingsProvider>
-        <Router>
-          <AppLayout />
-        </Router>
+        <ShortcutBindingsProvider>
+          <Router>
+            <AppLayout />
+          </Router>
+        </ShortcutBindingsProvider>
       </DisplaySettingsProvider>
     </AudioSessionProvider>
   )

@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAudioSession } from "../hooks/useAudioSession";
+import { useLabelFile } from "../hooks/useLabelFile";
 
 function AppHeader() {
   const { uploadId, isUploading, uploadFile } = useAudioSession();
+  const {
+    error: labelFileError,
+    canExport,
+    importLabelFile,
+    exportLabelFile,
+    clearError: clearLabelFileError,
+  } = useLabelFile();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +34,11 @@ function AppHeader() {
         <div ref={menuRef} className="relative">
           <button
             type="button"
-            onClick={() => setIsMenuOpen((open) => !open)}
+            onClick={() => {
+              // エラーは行番号などを読んでファイルを直せるよう自動では消さず、次にメニューを開いたときに消す
+              clearLabelFileError();
+              setIsMenuOpen((open) => !open);
+            }}
             className="rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
           >
             ファイル
@@ -49,6 +61,38 @@ function AppHeader() {
                   }}
                 />
               </label>
+
+              <label
+                className={`block px-3 py-2 text-sm ${
+                  uploadId ? "cursor-pointer text-gray-900 hover:bg-gray-100" : "text-gray-400"
+                }`}
+              >
+                ラベルを読み込む
+                <input
+                  type="file"
+                  accept=".txt,.tsv,text/plain"
+                  className="hidden"
+                  disabled={!uploadId}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    setIsMenuOpen(false);
+                    if (file) importLabelFile(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+
+              <button
+                type="button"
+                disabled={!canExport}
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  exportLabelFile();
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-transparent"
+              >
+                ラベルを書き出す
+              </button>
             </div>
           )}
         </div>
@@ -56,6 +100,8 @@ function AppHeader() {
         <Link to="/settings" className="rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100">
           設定
         </Link>
+
+        {labelFileError && <p className="m-0 text-sm text-red-600">{labelFileError}</p>}
       </div>
     </header>
   );

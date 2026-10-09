@@ -2,7 +2,7 @@
 // ここにIDと表示名・初期割り当てだけを追加すれば、設定画面の一覧・カスタマイズUIに自動で反映される。
 // 実際の挙動(ハンドラ)は各画面がuseKeyboardShortcutsで個別に登録する。
 
-export type ShortcutId = "togglePlay";
+export type ShortcutId = "togglePlay" | "deleteSelectedSegment" | "deselectSegment";
 
 export type KeyCombo = {
   key: string;
@@ -24,6 +24,9 @@ function combo(key: string, modifiers: Partial<Omit<KeyCombo, "key">> = {}): Key
 
 export const SHORTCUT_CATALOG: ShortcutDef[] = [
   { id: "togglePlay", label: "再生 / 一時停止", defaultCombo: combo(" ") },
+  // MacのdeleteキーはBackspaceとして送られるため、こちらを初期値にする
+  { id: "deleteSelectedSegment", label: "選択中の区間を削除", defaultCombo: combo("Backspace") },
+  { id: "deselectSegment", label: "区間の選択を解除", defaultCombo: combo("Enter") },
 ];
 
 const KEY_DISPLAY_NAMES: Record<string, string> = {

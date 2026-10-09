@@ -63,6 +63,7 @@ start_sec\tend_sec\tlabel
      - 文言の編集: ラベル帯をダブルクリック
      - 削除・選択解除: 選択中にショートカット(初期値: Backspace / Enter)。キー割り当ては設定画面で変更可能
 5. **エクスポート**: 指定フォーマットで書き出し
+   - 保存場所を選べるブラウザ(Chrome/Edge)では保存ダイアログで場所を指定する。それ以外のブラウザではダウンロードフォルダに保存する
 6. **インポート**: 既存ラベルファイルを読み込み、区間を波形上に復元して編集継続
 
 ## 5. Nice to have の位置づけ
@@ -81,9 +82,10 @@ start_sec\tend_sec\tlabel
 ### 拡張性
 
 - Nice to have(VAD/Whisper)を後から差し込めるよう、区間生成ロジックは「手動入力」も「自動検出」も同じ `Segment` 型・同じバリデーション経路を通す(4章のデータモデル参照)。UI/状態管理/バリデーションを自動生成のために作り直さなくて済むようにする
-- ラベルフォーマットの読み書きは `label_format.py` のような単一箇所に閉じ込め、将来フォーマットが増えても他コードに影響しないようにする
+- ラベルフォーマットの読み書きはフロントの `formats/labelFormat.ts` 1箇所に閉じ込め、将来フォーマットが増えても他コードに影響しないようにする
+  - テキスト⇔区間の変換のみでファイル保存も伴わないため、バックエンドを経由せずブラウザ内で完結させる(往復の通信と構成を減らすため)。VAD/Whisper の結果はバックエンドから区間データ(JSON)として受け取る想定なので、Python 側でこのフォーマットを扱う必要はない
 - ラベルプリセットは設定ファイル(`presets.yaml`)側に外出しし、コード変更なしでユースケースごとに差し替えられるようにする
-- バックエンドは機能単位(音声I/O、ラベルI/O)でルーターを分割し、将来 VAD/Whisper 用のルーターを追加しやすい構成にする
+- バックエンドは機能単位(音声I/Oなど)でルーターを分割し、将来 VAD/Whisper 用のルーターを追加しやすい構成にする
 
 ### UI
 
@@ -121,7 +123,7 @@ start_sec\tend_sec\tlabel
 
 - フロント: React + 波形表示ライブラリ(wavesurfer.js など)
 - バックエンド: FastAPI(将来の VAD/Whisper 処理をここに集約)
-- ファイルI/O: バックエンド経由で音声・ラベルファイルを読み書き
+- ファイルI/O: 音声はバックエンド経由で読み込む(チャンネル抽出のため)。ラベルファイルはブラウザ内で読み書きする(7章「拡張性」参照)
 
 ### 想定ディレクトリ構成
 
@@ -131,12 +133,11 @@ audio-labeler/
 │   ├── app/
 │   │   ├── main.py            # FastAPI エントリポイント
 │   │   ├── routers/
-│   │   │   ├── audio.py       # 音声ファイルの一覧・取得
-│   │   │   └── labels.py      # ラベルの読み込み・保存
-│   │   ├── models.py          # Segment/Label のスキーマ(pydantic)
+│   │   │   └── audio.py       # 音声ファイルのアップロード・チャンネル抽出
+│   │   ├── models.py          # APIのスキーマ(pydantic)
 │   │   ├── config.py          # プリセット設定の読み込み
 │   │   └── io/
-│   │       └── label_format.py  # start_sec end_sec label のパース/シリアライズ
+│   │       └── audio_io.py    # 音声ファイルの情報取得・チャンネル抽出
 │   ├── presets.yaml           # ラベルプリセット定義(差し替え可能)
 │   ├── requirements.txt
 │   └── Dockerfile
@@ -147,10 +148,13 @@ audio-labeler/
 │   │   │   ├── Waveform.tsx       # 波形・ラベル領域の表示枠
 │   │   │   ├── TransportControls.tsx  # 再生/一時停止/シーク
 │   │   │   ├── LabelList.tsx      # 区間一覧、ジャンプ・編集・削除
-│   │   │   └── FileControls.tsx   # 音声/ラベルファイルの選択・インポート・エクスポート
+│   │   │   └── AppHeader.tsx      # ファイルメニュー(音声の読み込み、ラベルのインポート・エクスポート)
 │   │   ├── hooks/
 │   │   │   ├── useWavesurfer.ts   # wavesurfer.js の操作、区間の描画とラベル領域での入力・選択・位置調整
-│   │   │   └── useSegments.tsx    # 区間の状態管理(Context)・非オーバーラップ検証。画面遷移をまたいで保持する
+│   │   │   ├── useSegments.tsx    # 区間の状態管理(Context)・非オーバーラップ検証。画面遷移をまたいで保持する
+│   │   │   └── useLabelFile.ts    # ラベルファイルの読み込み・ダウンロード
+│   │   ├── formats/
+│   │   │   └── labelFormat.ts     # start_sec\tend_sec\tlabel のパース/シリアライズ
 │   │   └── types.ts               # Segment 型定義
 │   ├── package.json
 │   └── Dockerfile

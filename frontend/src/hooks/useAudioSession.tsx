@@ -6,6 +6,8 @@ type AudioSessionState = {
   filename: string | null;
   channelCount: number;
   channel: number;
+  // チャンネル番号は音声を読み込む前から設定できるため、読み込んだ音声に存在しない番号になっていることがある
+  channelOutOfRange: boolean;
   isUploading: boolean;
   error: string | null;
   uploadFile: (file: File) => Promise<boolean>;
@@ -39,9 +41,21 @@ export function AudioSessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const channelOutOfRange = uploadId !== null && (channel < 0 || channel >= channelCount);
+
   return (
     <AudioSessionContext.Provider
-      value={{ uploadId, filename, channelCount, channel, isUploading, error, uploadFile, setChannel }}
+      value={{
+        uploadId,
+        filename,
+        channelCount,
+        channel,
+        channelOutOfRange,
+        isUploading,
+        error,
+        uploadFile,
+        setChannel,
+      }}
     >
       {children}
     </AudioSessionContext.Provider>

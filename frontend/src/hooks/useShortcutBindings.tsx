@@ -1,10 +1,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { SHORTCUT_CATALOG, isSameKeyCombo, type KeyCombo, type ShortcutId } from "../shortcuts/catalog";
+import {
+  SHORTCUT_CATALOG,
+  isSameKeyCombo,
+  type KeyCombo,
+  type ShortcutBindings,
+  type ShortcutId,
+} from "../shortcuts/catalog";
 
 // 表示設定(useDisplaySettings)とは異なり、ショートカット割り当てはユーザーが手間をかけて
 // カスタマイズするものなので、リロードしても失われないようlocalStorageへ永続化する
 const STORAGE_KEY = "audio-labeler.shortcutBindings";
 
+// 初期値から変更したものだけを保存する。後から初期値を変えたとき、変更していない割り当てにも反映されるようにするため
 type BindingOverrides = Partial<Record<ShortcutId, KeyCombo>>;
 
 function loadOverrides(): BindingOverrides {
@@ -16,18 +23,10 @@ function loadOverrides(): BindingOverrides {
   }
 }
 
-function getDefaultCombo(id: ShortcutId): KeyCombo {
-  const def = SHORTCUT_CATALOG.find((s) => s.id === id);
-  if (!def) throw new Error(`Unknown shortcut id: ${id}`);
-  return def.defaultCombo;
-}
-
 type ShortcutBindingsState = {
+  bindings: ShortcutBindings;
   getBinding: (id: ShortcutId) => KeyCombo;
-  setBinding: (id: ShortcutId, combo: KeyCombo) => void;
-  resetBinding: (id: ShortcutId) => void;
-  // 指定のキー割り当てが既に別のショートカットで使われていれば、そのIDを返す
-  findConflict: (id: ShortcutId, combo: KeyCombo) => ShortcutId | null;
+  setBindings: (bindings: ShortcutBindings) => void;
 };
 
 const ShortcutBindingsContext = createContext<ShortcutBindingsState | null>(null);
@@ -39,30 +38,25 @@ export function ShortcutBindingsProvider({ children }: { children: ReactNode }) 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
   }, [overrides]);
 
-  const getBinding = (id: ShortcutId): KeyCombo => overrides[id] ?? getDefaultCombo(id);
+  const bindings = Object.fromEntries(
+    SHORTCUT_CATALOG.map((def) => [def.id, overrides[def.id] ?? def.defaultCombo]),
+  ) as ShortcutBindings;
 
-  const setBinding = (id: ShortcutId, combo: KeyCombo) => {
-    setOverrides((prev) => ({ ...prev, [id]: combo }));
-  };
+  const getBinding = (id: ShortcutId): KeyCombo => bindings[id];
 
-  const resetBinding = (id: ShortcutId) => {
-    setOverrides((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  };
-
-  const findConflict = (id: ShortcutId, combo: KeyCombo): ShortcutId | null => {
-    for (const def of SHORTCUT_CATALOG) {
-      if (def.id === id) continue;
-      if (isSameKeyCombo(overrides[def.id] ?? def.defaultCombo, combo)) return def.id;
-    }
-    return null;
+  const setBindings = (next: ShortcutBindings) => {
+    setOverrides(
+      Object.fromEntries(
+        SHORTCUT_CATALOG.filter((def) => !isSameKeyCombo(next[def.id], def.defaultCombo)).map((def) => [
+          def.id,
+          next[def.id],
+        ]),
+      ),
+    );
   };
 
   return (
-    <ShortcutBindingsContext.Provider value={{ getBinding, setBinding, resetBinding, findConflict }}>
+    <ShortcutBindingsContext.Provider value={{ bindings, getBinding, setBindings }}>
       {children}
     </ShortcutBindingsContext.Provider>
   );

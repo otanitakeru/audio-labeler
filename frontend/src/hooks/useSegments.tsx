@@ -31,7 +31,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
   const { uploadId } = useAudioSession();
   const [segments, setSegments] = useState<Segment[]>([]);
 
-  // 画面遷移(編集画面⇔設定画面)をまたいでも区間を保持できるよう、状態をルーターの外側
+  // 編集画面だけでなくヘッダー(ラベルの読み込み・書き出し)からも使うため、状態をルーターの外側
   // (このProvider)に置いている。そのため新しい音声ファイルが読み込まれたときだけ、
   // 前のファイルの区間が残らないよう明示的にリセットする
   useEffect(() => {

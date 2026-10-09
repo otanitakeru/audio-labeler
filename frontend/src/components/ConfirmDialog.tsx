@@ -1,3 +1,4 @@
+import Button from "./Button";
 import Dialog from "./Dialog";
 
 type ConfirmDialogProps = {
@@ -16,20 +17,12 @@ function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, onCancel
       <div className="flex w-[min(440px,80vw)] flex-col gap-6">
         <p className="m-0 text-gray-900">{message}</p>
         <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-          >
+          <Button variant="secondary" onClick={onCancel}>
             キャンセル
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="cursor-pointer rounded-md bg-gray-900 px-6 py-2 text-sm font-semibold text-white hover:bg-gray-700"
-          >
+          </Button>
+          <Button variant="primary" onClick={onConfirm}>
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </Dialog>

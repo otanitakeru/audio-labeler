@@ -7,6 +7,8 @@ type SegmentMutationResult = { success: true } | { success: false; error: string
 
 type SegmentsState = {
   segments: Segment[];
+  // 新しい区間を追加できるかだけを検証する(エラーがあればメッセージを返す)。ラベル入力を始める前のチェックに使う
+  validateNewSegment: (startSec: number, endSec: number) => string | null;
   addSegment: (startSec: number, endSec: number, label: string) => SegmentMutationResult;
   updateSegmentLabel: (id: string, label: string) => void;
   updateSegmentRange: (id: string, startSec: number, endSec: number) => SegmentMutationResult;
@@ -38,8 +40,12 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
     setSegments([]);
   }, [uploadId]);
 
+  function validateNewSegment(startSec: number, endSec: number): string | null {
+    return findRangeError(startSec, endSec, segments);
+  }
+
   function addSegment(startSec: number, endSec: number, label: string): SegmentMutationResult {
-    const error = findRangeError(startSec, endSec, segments);
+    const error = validateNewSegment(startSec, endSec);
     if (error) return { success: false, error };
     setSegments((prev) => [...prev, { id: crypto.randomUUID(), startSec, endSec, label, source: "manual" }]);
     return { success: true };
@@ -82,7 +88,15 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
 
   return (
     <SegmentsContext.Provider
-      value={{ segments, addSegment, updateSegmentLabel, updateSegmentRange, removeSegment, replaceSegments }}
+      value={{
+        segments,
+        validateNewSegment,
+        addSegment,
+        updateSegmentLabel,
+        updateSegmentRange,
+        removeSegment,
+        replaceSegments,
+      }}
     >
       {children}
     </SegmentsContext.Provider>

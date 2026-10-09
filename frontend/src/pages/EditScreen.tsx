@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getAudioStreamUrl } from "../api/audioApi";
+import AlertDialog from "../components/AlertDialog";
 import TransportControls from "../components/TransportControls";
 import Waveform from "../components/Waveform";
 import { useAudioSession } from "../hooks/useAudioSession";
@@ -9,27 +10,19 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useSegments } from "../hooks/useSegments";
 import { useWavesurfer } from "../hooks/useWavesurfer";
 
-// 重なりなど、ユーザー操作に起因するエラーを表示し続ける時間(ms)
-const ERROR_DISPLAY_MS = 4000;
-
 function EditScreen() {
   const { uploadId, filename, channelCount, channel, channelOutOfRange } = useAudioSession();
   const navigate = useNavigate();
   const waveformContainerRef = useRef<HTMLDivElement>(null);
   const amplitudeAxisRef = useRef<HTMLDivElement>(null);
-  const { segments, addSegment, updateSegmentLabel, updateSegmentRange, removeSegment } = useSegments();
+  const { segments, validateNewSegment, addSegment, updateSegmentLabel, updateSegmentRange, removeSegment } =
+    useSegments();
   const { mainWaveformHeight, minimapHeight } = useDisplaySettings();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!uploadId) navigate("/", { replace: true });
   }, [uploadId, navigate]);
-
-  useEffect(() => {
-    if (!error) return;
-    const timer = setTimeout(() => setError(null), ERROR_DISPLAY_MS);
-    return () => clearTimeout(timer);
-  }, [error]);
 
   // 範囲外のチャンネルはバックエンドで読み込めないため、設定で直されるまで波形を読み込まない
   const audioUrl = uploadId && !channelOutOfRange ? getAudioStreamUrl(uploadId, channel) : null;
@@ -45,6 +38,7 @@ function EditScreen() {
     startLabelingSelection,
   } = useWavesurfer(waveformContainerRef, audioUrl, {
     segments,
+    validateNewSegment,
     onAddSegment: (startSec, endSec, label) => {
       const result = addSegment(startSec, endSec, label);
       return result.success ? null : result.error;
@@ -86,10 +80,6 @@ function EditScreen() {
         onTogglePlay={togglePlay}
       />
 
-      {error && (
-        <p className="m-0 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-      )}
-
       <div className="relative">
         <Waveform
           containerRef={waveformContainerRef}
@@ -111,6 +101,8 @@ function EditScreen() {
           </div>
         )}
       </div>
+
+      <AlertDialog message={error} onClose={() => setError(null)} />
     </div>
   );
 }

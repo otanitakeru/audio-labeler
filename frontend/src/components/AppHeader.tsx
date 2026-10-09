@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAudioSession } from "../hooks/useAudioSession";
 import { useLabelFile } from "../hooks/useLabelFile";
+import AlertDialog from "./AlertDialog";
 import ConfirmDialog from "./ConfirmDialog";
 
 type AppHeaderProps = {
@@ -42,11 +43,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
         <div ref={menuRef} className="relative">
           <button
             type="button"
-            onClick={() => {
-              // エラーは行番号などを読んでファイルを直せるよう自動では消さず、次にメニューを開いたときに消す
-              clearLabelFileError();
-              setIsMenuOpen((open) => !open);
-            }}
+            onClick={() => setIsMenuOpen((open) => !open)}
             className="rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
           >
             ファイル
@@ -112,10 +109,9 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
         >
           設定
         </button>
-
-        {labelFileError && <p className="m-0 text-sm text-red-600">{labelFileError}</p>}
       </div>
 
+      <AlertDialog message={labelFileError} onClose={clearLabelFileError} />
       <ConfirmDialog
         open={isConfirmingReplace}
         title="ラベルを読み込む"

@@ -2,9 +2,14 @@ import { useEffect, useRef } from "react";
 import { isSameKeyCombo, keyComboFromEvent, type ShortcutId } from "../shortcuts/catalog";
 import { useShortcutBindings } from "./useShortcutBindings";
 
-type ShortcutHandlers = Partial<Record<ShortcutId, () => void>>;
+// falseを返したハンドラは「今は該当する操作がない」とみなし、キーのブラウザ標準動作(フォーカス中のボタンでのEnter等)を妨げない
+type ShortcutHandler = () => void | boolean;
+type ShortcutHandlers = Partial<Record<ShortcutId, ShortcutHandler>>;
 
-function isTypingTarget(target: EventTarget | null): boolean {
+// wavesurferのラベル帯のようにShadow DOM内の要素で入力している場合、document側ではe.targetが
+// Shadow DOMのホスト要素に置き換わってしまうため、composedPathの先頭(実際の入力先)で判定する
+function isTypingTarget(e: KeyboardEvent): boolean {
+  const target = e.composedPath()[0];
   if (!(target instanceof HTMLElement)) return false;
   return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
 }
@@ -22,13 +27,13 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
+      if (isTypingTarget(e)) return;
       const pressed = keyComboFromEvent(e);
-      for (const [id, handler] of Object.entries(handlersRef.current) as [ShortcutId, (() => void) | undefined][]) {
+      for (const [id, handler] of Object.entries(handlersRef.current) as [ShortcutId, ShortcutHandler | undefined][]) {
         if (!handler) continue;
         if (isSameKeyCombo(getBindingRef.current(id), pressed)) {
+          if (handler() === false) return;
           e.preventDefault();
-          handler();
           return;
         }
       }

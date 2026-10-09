@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getAudioStreamUrl } from "../api/audioApi";
-import SegmentLabelForm from "../components/SegmentLabelForm";
 import TransportControls from "../components/TransportControls";
 import Waveform from "../components/Waveform";
 import { useAudioSession } from "../hooks/useAudioSession";
@@ -10,48 +9,59 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useSegments } from "../hooks/useSegments";
 import { useWavesurfer } from "../hooks/useWavesurfer";
 
-type PendingSelection = { startSec: number; endSec: number };
+// 重なりなど、ユーザー操作に起因するエラーを表示し続ける時間(ms)
+const ERROR_DISPLAY_MS = 4000;
 
 function EditScreen() {
   const { uploadId, filename, channelCount, channel } = useAudioSession();
   const navigate = useNavigate();
   const waveformContainerRef = useRef<HTMLDivElement>(null);
   const amplitudeAxisRef = useRef<HTMLDivElement>(null);
-  const { segments, addSegment } = useSegments();
+  const { segments, addSegment, updateSegmentLabel, updateSegmentRange, removeSegment } = useSegments();
   const { mainWaveformHeight, minimapHeight } = useDisplaySettings();
-  const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!uploadId) navigate("/", { replace: true });
   }, [uploadId, navigate]);
 
-  const audioUrl = uploadId ? getAudioStreamUrl(uploadId, channel) : null;
-  const { isReady, isPlaying, currentTime, duration, visiblePeakAmplitude, togglePlay, clearPendingRegion } =
-    useWavesurfer(waveformContainerRef, audioUrl, {
-      segments,
-      onRegionCreated: (startSec, endSec) => setPendingSelection({ startSec, endSec }),
-      mainWaveformHeight,
-      minimapHeight,
-      amplitudeAxisRef,
-    });
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), ERROR_DISPLAY_MS);
+    return () => clearTimeout(timer);
+  }, [error]);
 
-  useKeyboardShortcuts({ togglePlay });
+  const audioUrl = uploadId ? getAudioStreamUrl(uploadId, channel) : null;
+  const {
+    isReady,
+    isPlaying,
+    currentTime,
+    duration,
+    visiblePeakAmplitude,
+    togglePlay,
+    deleteSelectedSegment,
+    deselectSegment,
+  } = useWavesurfer(waveformContainerRef, audioUrl, {
+    segments,
+    onAddSegment: (startSec, endSec, label) => {
+      const result = addSegment(startSec, endSec, label);
+      return result.success ? null : result.error;
+    },
+    onUpdateLabel: updateSegmentLabel,
+    onUpdateRange: (id, startSec, endSec) => {
+      const result = updateSegmentRange(id, startSec, endSec);
+      return result.success ? null : result.error;
+    },
+    onDeleteSegment: removeSegment,
+    onError: setError,
+    mainWaveformHeight,
+    minimapHeight,
+    amplitudeAxisRef,
+  });
+
+  useKeyboardShortcuts({ togglePlay, deleteSelectedSegment, deselectSegment });
 
   if (!uploadId) return null;
-
-  const handleCancelSelection = () => {
-    clearPendingRegion();
-    setPendingSelection(null);
-  };
-
-  const handleSubmitLabel = (label: string): string | null => {
-    if (!pendingSelection) return null;
-    const result = addSegment(pendingSelection.startSec, pendingSelection.endSec, label);
-    if (!result.success) return result.error;
-    clearPendingRegion();
-    setPendingSelection(null);
-    return null;
-  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -59,6 +69,10 @@ function EditScreen() {
         <span>{filename}</span>
         {channelCount > 1 && <span className="text-gray-500">ch {channel}</span>}
       </div>
+
+      {error && (
+        <p className="m-0 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+      )}
 
       <div className="relative">
         <Waveform
@@ -82,15 +96,6 @@ function EditScreen() {
           currentTime={currentTime}
           duration={duration}
           onTogglePlay={togglePlay}
-        />
-      )}
-
-      {pendingSelection && (
-        <SegmentLabelForm
-          startSec={pendingSelection.startSec}
-          endSec={pendingSelection.endSec}
-          onSubmit={handleSubmitLabel}
-          onCancel={handleCancelSelection}
         />
       )}
     </div>

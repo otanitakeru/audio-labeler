@@ -12,7 +12,7 @@ import {
   MIN_MINIMAP_HEIGHT,
   useDisplaySettings,
 } from "../hooks/useDisplaySettings";
-import { SHORTCUT_CATALOG } from "../shortcuts/catalog";
+import { SHORTCUT_CATALOG, SHORTCUT_GROUPS } from "../shortcuts/catalog";
 
 const CATEGORIES = ["音声読み込み", "表示設定", "ショートカットキー"] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -116,11 +116,14 @@ function SettingsScreen() {
         <div className="flex flex-1 flex-col gap-6">
           <h2 className="m-0 text-xl font-semibold text-gray-900">ショートカットキー</h2>
 
-          <div className="flex flex-col gap-3">
-            {SHORTCUT_CATALOG.map((def) => (
-              <ShortcutBindingRow key={def.id} def={def} />
-            ))}
-          </div>
+          {SHORTCUT_GROUPS.map((group) => (
+            <div key={group} className="flex flex-col gap-3">
+              <div className="font-semibold text-gray-900">{group}</div>
+              {SHORTCUT_CATALOG.filter((def) => def.group === group).map((def) => (
+                <ShortcutBindingRow key={def.id} def={def} />
+              ))}
+            </div>
+          ))}
 
           <p className="m-0 text-sm text-gray-500">Cmd(Ctrl) + スクロールで波形を横方向に拡大/縮小できます。</p>
         </div>

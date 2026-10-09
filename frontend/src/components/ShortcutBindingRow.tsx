@@ -50,7 +50,7 @@ function ShortcutBindingRow({ def }: ShortcutBindingRowProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <span className="w-40 shrink-0 text-gray-900">{def.label}</span>
+      <span className="w-52 shrink-0 text-gray-900">{def.label}</span>
       <button
         type="button"
         onClick={startRecording}

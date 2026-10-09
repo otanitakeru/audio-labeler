@@ -20,9 +20,11 @@ const WHEEL_ZOOM_FACTOR = 1.1;
 // リサイズ/ドラッグ選択時に区間の長さが0にならないようにする下限(秒)
 const MIN_REGION_LENGTH_SEC = 0.01;
 
-const PENDING_REGION_COLOR = "rgba(234, 88, 12, 0.15)";
+const SELECTION_REGION_COLOR = "rgba(234, 88, 12, 0.15)";
 const SEGMENT_REGION_COLOR = "rgba(37, 99, 235, 0.12)";
 const ACTIVE_SEGMENT_REGION_COLOR = "rgba(37, 99, 235, 0.25)";
+// 全体波形上に重ねる確定済み区間の色。全体波形は縦幅が小さく薄い色だと見えにくいため、メイン波形より濃くする
+const MINIMAP_SEGMENT_COLOR = "rgba(37, 99, 235, 0.3)";
 // ラベル文言を表示・編集する帯の高さ(px)。「波形の下側にラベルを書く」という見た目にするため、
 // 区間(Region)自体は波形+ラベル領域の全高を使いつつ、テキストはこの帯にだけ配置する
 const LABEL_BAR_HEIGHT_PX = 40;
@@ -233,48 +235,66 @@ function createAdjustBar({ onStart, onMove, onEnd }: AdjustBarHandlers): AdjustB
   };
 }
 
-// 保留中区間の確定(✓)/作成キャンセル(×)用のボタン。
-// pointerdownでpreventDefault+stopPropagationし、区間のドラッグ開始やcontentEditableのフォーカス移動を妨げないようにする
-function createRegionButton(
-  label: string,
-  rightOffsetPx: number,
-  color: string,
-  onActivate: () => void,
-): HTMLButtonElement {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = label;
-  button.style.cssText = [
-    "position:absolute",
-    "top:2px",
-    `right:${rightOffsetPx}px`,
-    "width:14px",
-    "height:14px",
-    "line-height:1",
-    "font-size:11px",
-    "border:none",
-    "border-radius:9999px",
-    "background:rgba(255,255,255,0.9)",
-    `color:${color}`,
-    "cursor:pointer",
-    "padding:0",
-  ].join(";");
-  // pointerdownの時点でpreventDefaultし、フォーカス中のcontentEditableからフォーカスが
-  // 移らないようにする(移ってしまうとblurが先に発火し、意図しない確定/破棄が起きるため)
-  button.addEventListener("pointerdown", (e) => {
+// MinimapプラグインはメインのwavesurferのShadow DOM内に全体波形を差し込むため、part属性で探す
+function getMinimapElement(wavesurfer: WaveSurfer): HTMLElement | null {
+  const root = wavesurfer.getWrapper().getRootNode();
+  return root instanceof ShadowRoot ? root.querySelector<HTMLElement>('[part="minimap"]') : null;
+}
+
+// 全体波形を、メイン波形の表示位置を動かすためのスクロール操作に使う。
+// ドラッグで表示範囲(ハイライト)を動かし、ホイールで横にスクロールする。戻り値はリスナーの解除関数
+function attachMinimapScroll(minimap: HTMLElement, wavesurfer: WaveSurfer): () => void {
+  // メイン波形の表示範囲を、全体の幅に対する比率(0〜1)で扱う
+  const getTotalWidth = () => wavesurfer.getWrapper().clientWidth || 1;
+  const toRatio = (clientX: number) => {
+    const rect = minimap.getBoundingClientRect();
+    return (clientX - rect.left) / rect.width;
+  };
+  minimap.style.cursor = "grab";
+
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
-    e.stopPropagation();
-  });
-  button.addEventListener("click", (e) => {
-    e.stopPropagation();
-    onActivate();
-  });
-  return button;
+    const viewStart = wavesurfer.getScroll() / getTotalWidth();
+    const viewWidth = wavesurfer.getWidth() / getTotalWidth();
+    const pressed = toRatio(e.clientX);
+    // ハイライトの内側を掴んだときは掴んだ位置を保ったまま動かし、外側を押したときはその位置が中心に来るよう表示する
+    const grabOffset = pressed >= viewStart && pressed <= viewStart + viewWidth ? pressed - viewStart : viewWidth / 2;
+    const scrollTo = (clientX: number) => wavesurfer.setScroll((toRatio(clientX) - grabOffset) * getTotalWidth());
+
+    minimap.setPointerCapture(e.pointerId);
+    minimap.style.cursor = "grabbing";
+    scrollTo(e.clientX);
+    const handleMove = (ev: PointerEvent) => scrollTo(ev.clientX);
+    const handleUp = () => {
+      minimap.removeEventListener("pointermove", handleMove);
+      minimap.removeEventListener("pointerup", handleUp);
+      minimap.removeEventListener("pointercancel", handleUp);
+      minimap.style.cursor = "grab";
+    };
+    minimap.addEventListener("pointermove", handleMove);
+    minimap.addEventListener("pointerup", handleUp);
+    minimap.addEventListener("pointercancel", handleUp);
+  };
+
+  // Cmd/Ctrl+スクロールは横方向のズームとして波形コンテナ側で扱うため、ここでは素のスクロールだけを拾う
+  const onWheel = (e: WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    wavesurfer.setScroll(wavesurfer.getScroll() + e.deltaX + e.deltaY);
+  };
+
+  minimap.addEventListener("pointerdown", onPointerDown);
+  minimap.addEventListener("wheel", onWheel, { passive: false });
+  return () => {
+    minimap.removeEventListener("pointerdown", onPointerDown);
+    minimap.removeEventListener("wheel", onWheel);
+  };
 }
 
 type UseWavesurferOptions = {
   segments: Segment[];
-  // 新規のドラッグ選択に対してラベルが確定したときに呼ばれる。エラーがあればメッセージを返す
+  // 選択範囲へのラベル入力が確定したときに呼ばれる。エラーがあればメッセージを返す
   onAddSegment: (startSec: number, endSec: number, label: string) => string | null;
   onUpdateLabel: (id: string, label: string) => void;
   // 調整帯での移動/幅変更が確定したときに呼ばれる。エラーがあればメッセージを返す(呼び出し側で元の位置に戻す)
@@ -300,6 +320,8 @@ type UseWavesurferResult = {
   // 選択中の区間がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   deleteSelectedSegment: () => boolean;
   deselectSegment: () => boolean;
+  // 選択範囲(ドラッグ選択)に対してラベル入力を始める。選択範囲がない・入力中ならfalse
+  startLabelingSelection: () => boolean;
 };
 
 export function useWavesurfer(
@@ -319,7 +341,14 @@ export function useWavesurfer(
 ): UseWavesurferResult {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
-  const pendingRegionRef = useRef<Region | null>(null);
+  // 波形上のドラッグ選択で作られる選択範囲。確定済み区間とは別物で、同時に1つだけ。
+  // ラベル入力(startLabelingSelection)や、将来の範囲再生の対象になるため、ラベル入力とは独立した状態として持つ
+  const selectionRegionRef = useRef<Region | null>(null);
+  // 選択範囲にラベル入力中なら、その入力を取り消す(選択範囲自体は残す)関数と、入力欄の要素
+  const labelingRef = useRef<{ cancel: () => void; content: HTMLElement } | null>(null);
+  const minimapElementRef = useRef<HTMLElement | null>(null);
+  // 全体波形の上に確定済み区間の範囲を表示するレイヤー
+  const minimapSegmentLayerRef = useRef<HTMLDivElement | null>(null);
   // イベントハンドラは初期化effect内で一度だけ登録するため、最新の値を参照できるようrefに控える
   const segmentsRef = useRef(segments);
   segmentsRef.current = segments;
@@ -367,12 +396,17 @@ export function useWavesurfer(
 
     const wavesurfer = WaveSurfer.create({
       container: containerRef.current,
+      // 再生位置の前後で波形の色を変えない(再生位置はカーソル線だけで示す)
       waveColor: "#9ca3af",
-      progressColor: "#4b5563",
+      progressColor: "#9ca3af",
+      cursorColor: "#111827",
       height: mainWaveformHeight,
       url: audioUrl,
       normalize: true,
       minPxPerSec: DEFAULT_ZOOM,
+      // 表示位置の移動は全体波形(Minimap)のドラッグとホイールで行うため、波形下のスクロールバーは見た目だけ消す
+      // (このオプションはCSSで非表示にするだけで、スクロール自体はできる)
+      hideScrollbar: true,
       plugins: [
         Minimap.create({
           height: minimapHeight,
@@ -381,6 +415,9 @@ export function useWavesurfer(
           overlayColor: "rgba(45, 45, 51, 0.15)",
           normalize: true,
           insertPosition: "beforebegin",
+          // 再生位置(カーソル線)はメイン波形の中でだけ動かせるようにし、全体波形のクリックではシークしない。
+          // 代わりに表示位置の移動に使う(attachMinimapScroll)
+          interact: false,
         }),
         regions,
       ],
@@ -392,73 +429,47 @@ export function useWavesurfer(
     // ラベル帯・調整帯はこの余白に収まり、縦方向に拡大しても波形がラベルに被らない
     wavesurfer.getWrapper().style.paddingBottom = `${LABEL_AREA_HEIGHT_PX}px`;
 
-    // wavesurferの hideScrollbar オプションは overflow: hidden にしてスクロール自体を無効化してしまい、
-    // ズーム時に音声の先頭以降を表示・Minimapのハイライト表示ができなくなるため使わない。
-    // (CSSでスクロールバーの見た目だけを消す方法は、スクロールバーの表示/非表示切り替えが
-    // clientWidthの変化を招きレイアウトが無限に往復するバグになったため見送り、素直に表示する)
+    const minimapElement = getMinimapElement(wavesurfer);
+    minimapElementRef.current = minimapElement;
+    const detachMinimapScroll = minimapElement ? attachMinimapScroll(minimapElement, wavesurfer) : () => {};
+    if (minimapElement) {
+      // 全体波形の上・表示範囲のハイライト(z-index:2)の下に重ねる。操作は全体波形側で受けるためpointer-eventsは無効化する
+      const layer = document.createElement("div");
+      layer.style.cssText = "position:absolute;inset:0;z-index:1;pointer-events:none";
+      minimapElement.appendChild(layer);
+      minimapSegmentLayerRef.current = layer;
+    }
 
-    // 位置・幅の変更は確定済み区間の調整帯でのみ行う方針のため、保留中区間でも波形上でのドラッグ移動/リサイズは無効にする
+    // 位置・幅の変更は確定済み区間の調整帯でのみ行う方針のため、選択範囲も波形上でのドラッグ移動/リサイズは無効にする
     // (範囲を変えたいときはドラッグ選択をやり直す)
     const disableDragSelection = regions.enableDragSelection({
-      color: PENDING_REGION_COLOR,
-      contentEditable: true,
+      color: SELECTION_REGION_COLOR,
       minLength: MIN_REGION_LENGTH_SEC,
       drag: false,
       resize: false,
     });
 
-    // 新規のドラッグ選択が確定するたびに、その場でラベルを打ち込めるcontentEditableな帯をセットする。
-    // Audacityのラベルトラックのように、区間を選んだ直後にすぐ文字入力を始められるようにするため
+    // ドラッグ選択は「範囲を選ぶ」だけにとどめ、ラベル入力はショートカット(startLabelingSelection)で明示的に始める。
+    // 選択範囲を範囲再生など、ラベル付け以外の操作の対象にもできるようにするため
     regions.on("region-created", (region) => {
       // 確定済み区間の再描画(addRegion)でもこのイベントが発火するため、そちらは無視する
       if (segmentIdsRef.current.has(region.id)) return;
-      const previousPending = pendingRegionRef.current;
-      // 先に新しい方をpendingRegionRefへ差し替えてからremove()する。逆順にすると、
-      // remove()でフォーカス中のcontentEditableが強制blurされた際、古い方のblurハンドラが
-      // 「まだ自分がpendingRegionRef.currentである」と誤認して不要なonAddSegmentを呼んでしまう
-      pendingRegionRef.current = region;
-      previousPending?.remove();
-
-      const content = createLabelContent("", "rgba(255, 247, 237, 0.95)", "#f97316");
-      region.setContent(content);
-      content.focus();
-
-      // 新規作成時は「何をもって確定とするか」が曖昧になりやすいため
-      // (例: 別の場所で新しいドラッグ選択を始めるとフォーカスが外れblurが発火するが、
-      // これは確定ではなく破棄したい)、確定はEnter/✓ボタンの明示的な操作のみに限定し、
-      // それ以外の理由でのblurは常に保留中区間ごと破棄する
-      const commit = () => {
-        if (pendingRegionRef.current !== region) return;
-        const error = onAddSegmentRef.current(region.start, region.end, sanitizeLabel(content.textContent ?? ""));
-        if (error) {
-          onErrorRef.current(error);
-          return;
-        }
-        pendingRegionRef.current = null;
-        region.remove();
-      };
-      const cancel = () => {
-        if (pendingRegionRef.current !== region) return;
-        pendingRegionRef.current = null;
-        region.remove();
-      };
-      content.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          commit();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          cancel();
-        }
-      });
-      content.addEventListener("blur", cancel);
-      region.element?.appendChild(createRegionButton("✓", 18, "#16a34a", commit));
-      region.element?.appendChild(createRegionButton("×", 2, "#9ca3af", cancel));
+      const previousSelection = selectionRegionRef.current;
+      // 先に新しい方へ差し替えてからremove()する。逆順にすると、remove()でラベル入力中のcontentEditableが
+      // 強制blurされた際、古い方のblurハンドラが「まだ自分が選択範囲である」と誤認して動いてしまう
+      selectionRegionRef.current = region;
+      labelingRef.current = null;
+      previousSelection?.remove();
     });
 
     wavesurfer.on("ready", () => {
+      const peak = getPeakAmplitude(wavesurfer.getDecodedData());
+      // wavesurferは波形を画面幅ごとのキャンバスに分けて描き、normalizeもキャンバスごとの最大値で行うため、
+      // そのままでは横方向のズームで振幅の見え方が変わり、キャンバスの境目で振幅が不連続になる。
+      // 音声全体の最大値を基準として渡し、縦軸の目盛り(visiblePeakAmplitude)とも一致させる
+      wavesurfer.setOptions({ maxPeak: peak });
       setDuration(wavesurfer.getDuration());
-      setPeakAmplitude(getPeakAmplitude(wavesurfer.getDecodedData()));
+      setPeakAmplitude(peak);
       setIsReady(true);
     });
     wavesurfer.on("play", () => setIsPlaying(true));
@@ -467,34 +478,50 @@ export function useWavesurfer(
     wavesurfer.on("timeupdate", (time) => setCurrentTime(time));
 
     return () => {
+      detachMinimapScroll();
+      minimapElementRef.current = null;
+      minimapSegmentLayerRef.current = null;
       disableDragSelection();
       wavesurfer.destroy();
       wavesurferRef.current = null;
       regionsRef.current = null;
-      pendingRegionRef.current = null;
+      selectionRegionRef.current = null;
+      labelingRef.current = null;
       activeSegmentRef.current = null;
     };
   }, [containerRef, audioUrl, mainWaveformHeight, minimapHeight]);
 
-  // アクティブな区間の外側をクリックしたら非アクティブに戻す。区間側や他の要素がstopPropagationしていても
+  // 他の場所を押したら、その時点でアクティブな区間を非アクティブに戻し、選択範囲も解除する(Audacityと同様、
+  // 選択範囲の上を押した場合も解除し、ドラッグならそのまま新しい選択範囲になる)。区間側や他の要素がstopPropagationしていても
   // 取りこぼさないよう、キャプチャフェーズで拾う。wavesurferは波形をShadow DOM内に描画しており、
   // document側ではe.targetがShadow DOMのホスト要素に置き換わってしまうため、composedPathで内側まで含めて判定する
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
+      const path = e.composedPath();
+      // 区間の選択・選択範囲は波形の中を押したときだけ解除する。再生ボタンなど波形の外の操作は、それらを対象に行えるよう残す。
+      // 全体波形での操作も、表示位置を変えるだけなので解除しない
+      if (!containerRef.current || !path.includes(containerRef.current)) return;
+      if (minimapElementRef.current && path.includes(minimapElementRef.current)) return;
       const active = activeSegmentRef.current;
-      if (!active) return;
-      if (e.composedPath().includes(active.element)) return;
-      active.deactivate();
+      if (active && !path.includes(active.element)) active.deactivate();
+
+      const selection = selectionRegionRef.current;
+      if (!selection) return;
+      // ラベル入力欄の操作では選択範囲を解除しない
+      if (labelingRef.current && path.includes(labelingRef.current.content)) return;
+      selectionRegionRef.current = null;
+      labelingRef.current = null;
+      selection.remove();
     };
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
     return () => document.removeEventListener("pointerdown", onPointerDown, { capture: true });
-  }, []);
+  }, [containerRef]);
 
-  // 確定済み区間を波形上に同期表示する(保留中のドラッグ区間は残す)。
+  // 確定済み区間を波形上に同期表示する(選択範囲は残す)。
   // 誤操作を防ぐため、確定済み区間は普段は表示のみとし、ラベル帯をクリックしたときだけアクティブ(選択)にして
   // 調整帯(ラベル帯の下)での移動/幅変更・ショートカットでの削除を有効にする。ラベル文字の編集はさらにダブルクリックしたときだけ。
   // 選択中にそのまま文字編集状態にしないのは、Delete等のキーが「区間の削除」か「文字の削除」か曖昧になるため。
-  // 区間の外側をクリックすると非アクティブに戻る。
+  // 波形の中で区間の外側を押すと非アクティブに戻る。
   // RegionsPluginのcontentEditableオプションは常時編集可能にしてしまうため使わず、編集可否はここで切り替える。
   // 追加・削除された分の差分だけをregionsへ反映し、既存分はそのまま残す。ここで全region作り直す方式にすると、
   // 別の区間の追加/削除/確定のたびに編集中(フォーカス中)のcontentEditableまで壊れて入力中の文字が消えてしまうため
@@ -505,7 +532,7 @@ export function useWavesurfer(
     const currentIds = new Set(segments.map((s) => s.id));
     const existingIds = new Set<string>();
     for (const region of regions.getRegions()) {
-      if (region.id === pendingRegionRef.current?.id) continue;
+      if (region.id === selectionRegionRef.current?.id) continue;
       existingIds.add(region.id);
       if (currentIds.has(region.id)) continue;
       if (activeSegmentRef.current?.id === region.id) activeSegmentRef.current = null;
@@ -624,6 +651,26 @@ export function useWavesurfer(
     }
   }, [segments, isReady]);
 
+  // 全体波形の上に確定済み区間の範囲を表示する。数が多くても描き直しは軽いため、区間が変わるたびに全て作り直す
+  useEffect(() => {
+    const layer = minimapSegmentLayerRef.current;
+    if (!layer || !isReady || duration <= 0) return;
+    layer.replaceChildren(
+      ...segments.map((segment) => {
+        const bar = document.createElement("div");
+        bar.style.cssText = [
+          "position:absolute",
+          "top:0",
+          "bottom:0",
+          `left:${(segment.startSec / duration) * 100}%`,
+          `width:${((segment.endSec - segment.startSec) / duration) * 100}%`,
+          `background:${MINIMAP_SEGMENT_COLOR}`,
+        ].join(";");
+        return bar;
+      }),
+    );
+  }, [segments, isReady, duration]);
+
   // 横方向の拡大率(1秒あたりのピクセル数)が変わるたびに反映する。ホイール由来のズームなら、
   // wavesurfer標準の「再生位置を固定する」スクロール補正を上書きし、カーソル下の位置が動かないようにする
   useEffect(() => {
@@ -679,8 +726,21 @@ export function useWavesurfer(
     return () => axis.removeEventListener("wheel", onWheel);
   }, [amplitudeAxisRef]);
 
+  // 選択範囲、または選択中の確定済み区間があれば、Audacityと同様にその先頭から再生して末尾で止める。
+  // どちらもなければ現在の再生位置から通常再生する
   const togglePlay = () => {
-    wavesurferRef.current?.playPause();
+    const wavesurfer = wavesurferRef.current;
+    if (!wavesurfer) return;
+    if (wavesurfer.isPlaying()) {
+      wavesurfer.pause();
+      return;
+    }
+    const selection = selectionRegionRef.current;
+    const activeId = activeSegmentRef.current?.id;
+    const activeSegment = activeId ? segmentsRef.current.find((s) => s.id === activeId) : undefined;
+    if (selection) void wavesurfer.play(selection.start, selection.end);
+    else if (activeSegment) void wavesurfer.play(activeSegment.startSec, activeSegment.endSec);
+    else void wavesurfer.play();
   };
 
   const deleteSelectedSegment = () => {
@@ -698,6 +758,55 @@ export function useWavesurfer(
     return true;
   };
 
+  // 選択範囲の下に、その場でラベルを打ち込めるcontentEditableな帯をセットする
+  const startLabelingSelection = () => {
+    const region = selectionRegionRef.current;
+    if (!region || labelingRef.current) return false;
+    activeSegmentRef.current?.deactivate();
+
+    const content = createLabelContent("", "rgba(255, 247, 237, 0.95)", "#f97316");
+    region.setContent(content);
+    const isCurrent = () => selectionRegionRef.current === region && labelingRef.current?.cancel === cancel;
+
+    // 確定はEnterの明示的な操作のみに限定し、それ以外の理由でのblur
+    // (例: 別の場所で新しいドラッグ選択を始めた)は入力の取り消しとして扱う。
+    // 取り消しても選択範囲は残すので、続けて範囲再生したり、入力し直したりできる
+    const commit = () => {
+      if (!isCurrent()) return;
+      const error = onAddSegmentRef.current(region.start, region.end, sanitizeLabel(content.textContent ?? ""));
+      if (error) {
+        onErrorRef.current(error);
+        return;
+      }
+      selectionRegionRef.current = null;
+      labelingRef.current = null;
+      region.remove();
+    };
+    const cancel = () => {
+      if (!isCurrent()) return;
+      // 先に解除しておく。setContent()でフォーカス中の帯を外すとblurが発火し、このcancelが再入するため
+      labelingRef.current = null;
+      region.setContent(undefined);
+    };
+    content.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commit();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        cancel();
+      }
+    });
+    content.addEventListener("blur", cancel);
+    // 帯の中での文字選択・キャレット移動が、新しいドラッグ選択や波形のクリック(シーク)として扱われないよう伝播を止める
+    content.addEventListener("pointerdown", (e) => e.stopPropagation());
+    content.addEventListener("click", (e) => e.stopPropagation());
+    labelingRef.current = { cancel, content };
+    content.contentEditable = "true";
+    focusAtEnd(content);
+    return true;
+  };
+
   return {
     isReady,
     isPlaying,
@@ -707,5 +816,6 @@ export function useWavesurfer(
     togglePlay,
     deleteSelectedSegment,
     deselectSegment,
+    startLabelingSelection,
   };
 }

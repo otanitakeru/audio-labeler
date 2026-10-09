@@ -1,8 +1,8 @@
 // キーボードショートカットの定義(データ層)。
-// ここにIDと表示名・初期割り当てだけを追加すれば、設定画面の一覧・カスタマイズUIに自動で反映される。
+// ここにIDと表示名・トピック・初期割り当てだけを追加すれば、設定画面の一覧・カスタマイズUIに自動で反映される。
 // 実際の挙動(ハンドラ)は各画面がuseKeyboardShortcutsで個別に登録する。
 
-export type ShortcutId = "togglePlay" | "deleteSelectedSegment" | "deselectSegment";
+export type ShortcutId = "togglePlay" | "labelSelection" | "deleteSelectedSegment" | "deselectSegment";
 
 export type KeyCombo = {
   key: string;
@@ -12,9 +12,14 @@ export type KeyCombo = {
   meta: boolean;
 };
 
+// 設定画面でショートカットをまとめて表示する単位。配列の順に表示する
+export const SHORTCUT_GROUPS = ["基本操作", "ラベル"] as const;
+export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
+
 export type ShortcutDef = {
   id: ShortcutId;
   label: string;
+  group: ShortcutGroup;
   defaultCombo: KeyCombo;
 };
 
@@ -22,11 +27,21 @@ function combo(key: string, modifiers: Partial<Omit<KeyCombo, "key">> = {}): Key
   return { key, ctrl: false, shift: false, alt: false, meta: false, ...modifiers };
 }
 
+// OS標準のショートカット(コピー等)と同じ感覚で使えるよう、修飾キーはMacなら⌘、それ以外(Windows等)ならCtrlにする
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent);
+const PRIMARY_MODIFIER: Partial<Omit<KeyCombo, "key">> = IS_MAC ? { meta: true } : { ctrl: true };
+
 export const SHORTCUT_CATALOG: ShortcutDef[] = [
-  { id: "togglePlay", label: "再生 / 一時停止", defaultCombo: combo(" ") },
+  { id: "togglePlay", label: "再生 / 一時停止", group: "基本操作", defaultCombo: combo(" ") },
+  {
+    id: "labelSelection",
+    label: "選択範囲にラベルを追加",
+    group: "ラベル",
+    defaultCombo: combo("b", PRIMARY_MODIFIER),
+  },
   // MacのdeleteキーはBackspaceとして送られるため、こちらを初期値にする
-  { id: "deleteSelectedSegment", label: "選択中の区間を削除", defaultCombo: combo("Backspace") },
-  { id: "deselectSegment", label: "区間の選択を解除", defaultCombo: combo("Enter") },
+  { id: "deleteSelectedSegment", label: "選択中の区間を削除", group: "ラベル", defaultCombo: combo("Backspace") },
+  { id: "deselectSegment", label: "区間の選択を解除", group: "ラベル", defaultCombo: combo("Enter") },
 ];
 
 const KEY_DISPLAY_NAMES: Record<string, string> = {

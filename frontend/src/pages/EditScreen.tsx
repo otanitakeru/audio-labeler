@@ -41,6 +41,7 @@ function EditScreen() {
     togglePlay,
     deleteSelectedSegment,
     deselectSegment,
+    startLabelingSelection,
   } = useWavesurfer(waveformContainerRef, audioUrl, {
     segments,
     onAddSegment: (startSec, endSec, label) => {
@@ -59,7 +60,12 @@ function EditScreen() {
     amplitudeAxisRef,
   });
 
-  useKeyboardShortcuts({ togglePlay, deleteSelectedSegment, deselectSegment });
+  useKeyboardShortcuts({
+    togglePlay,
+    labelSelection: startLabelingSelection,
+    deleteSelectedSegment,
+    deselectSegment,
+  });
 
   if (!uploadId) return null;
 
@@ -69,6 +75,15 @@ function EditScreen() {
         <span>{filename}</span>
         {channelCount > 1 && <span className="text-gray-500">ch {channel}</span>}
       </div>
+
+      {/* 読み込み中も表示しておき(操作のみ無効化)、読み込み完了時に波形の位置がずれないようにする */}
+      <TransportControls
+        disabled={!isReady}
+        isPlaying={isPlaying}
+        currentTime={currentTime}
+        duration={duration}
+        onTogglePlay={togglePlay}
+      />
 
       {error && (
         <p className="m-0 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
@@ -89,15 +104,6 @@ function EditScreen() {
           </div>
         )}
       </div>
-
-      {isReady && (
-        <TransportControls
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          duration={duration}
-          onTogglePlay={togglePlay}
-        />
-      )}
     </div>
   );
 }

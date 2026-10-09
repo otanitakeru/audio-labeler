@@ -294,6 +294,8 @@ function attachMinimapScroll(minimap: HTMLElement, wavesurfer: WaveSurfer): () =
 
 type UseWavesurferOptions = {
   segments: Segment[];
+  // ラベル入力を始める前に、選択範囲に区間を追加できるか検証する。エラーがあればメッセージを返す
+  validateNewSegment: (startSec: number, endSec: number) => string | null;
   // 選択範囲へのラベル入力が確定したときに呼ばれる。エラーがあればメッセージを返す
   onAddSegment: (startSec: number, endSec: number, label: string) => string | null;
   onUpdateLabel: (id: string, label: string) => void;
@@ -320,7 +322,8 @@ type UseWavesurferResult = {
   // 選択中の区間がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   deleteSelectedSegment: () => boolean;
   deselectSegment: () => boolean;
-  // 選択範囲(ドラッグ選択)に対してラベル入力を始める。選択範囲がない・入力中ならfalse
+  // 選択範囲(ドラッグ選択)に対してラベル入力を始める。選択範囲がない・入力中ならfalse。
+  // 他の区間と重なるなど追加できない範囲なら、入力は始めずonErrorで知らせる
   startLabelingSelection: () => boolean;
 };
 
@@ -329,6 +332,7 @@ export function useWavesurfer(
   audioUrl: string | null,
   {
     segments,
+    validateNewSegment,
     onAddSegment,
     onUpdateLabel,
     onUpdateRange,
@@ -762,6 +766,13 @@ export function useWavesurfer(
   const startLabelingSelection = () => {
     const region = selectionRegionRef.current;
     if (!region || labelingRef.current) return false;
+    // 文字を打ち終えてから確定で失敗すると入力が無駄になるため、入力を始める前に検証する。
+    // (エラー表示のダイアログにフォーカスが移ると、入力欄のblurで入力も取り消されてしまう)
+    const error = validateNewSegment(region.start, region.end);
+    if (error) {
+      onErrorRef.current(error);
+      return true;
+    }
     activeSegmentRef.current?.deactivate();
 
     const content = createLabelContent("", "rgba(255, 247, 237, 0.95)", "#f97316");

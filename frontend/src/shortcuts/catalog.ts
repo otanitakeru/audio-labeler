@@ -1,5 +1,5 @@
 // キーボードショートカットの定義(データ層)。
-// ここにIDと表示名・トピック・初期割り当てだけを追加すれば、設定画面の一覧・カスタマイズUIに自動で反映される。
+// ここにIDと表示名・トピック・初期割り当てだけを追加すれば、設定ダイアログの一覧・カスタマイズUIに自動で反映される。
 // 実際の挙動(ハンドラ)は各画面がuseKeyboardShortcutsで個別に登録する。
 
 export type ShortcutId = "togglePlay" | "labelSelection" | "deleteSelectedSegment" | "deselectSegment";
@@ -12,7 +12,7 @@ export type KeyCombo = {
   meta: boolean;
 };
 
-// 設定画面でショートカットをまとめて表示する単位。配列の順に表示する
+// 設定ダイアログでショートカットをまとめて表示する単位。配列の順に表示する
 export const SHORTCUT_GROUPS = ["基本操作", "ラベル"] as const;
 export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
 
@@ -74,6 +74,17 @@ export function isSameKeyCombo(a: KeyCombo, b: KeyCombo): boolean {
     a.alt === b.alt &&
     a.meta === b.meta
   );
+}
+
+// 全ショートカットの現在の割り当て。設定ダイアログではOKを押すまでこの形の下書きを編集する
+export type ShortcutBindings = Record<ShortcutId, KeyCombo>;
+
+// 指定のキー割り当てが既に別のショートカットで使われていれば、そのIDを返す
+export function findConflict(bindings: ShortcutBindings, id: ShortcutId, target: KeyCombo): ShortcutId | null {
+  for (const def of SHORTCUT_CATALOG) {
+    if (def.id !== id && isSameKeyCombo(bindings[def.id], target)) return def.id;
+  }
+  return null;
 }
 
 export function keyComboFromEvent(e: KeyboardEvent): KeyCombo {

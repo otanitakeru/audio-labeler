@@ -14,6 +14,11 @@ function isTypingTarget(e: KeyboardEvent): boolean {
   return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
 }
 
+// モーダルダイアログ(設定など)の表示中は背後の画面を操作できない状態のため、キー操作も背後の画面には届けない
+function isModalDialogOpen(): boolean {
+  return document.querySelector("dialog:modal") !== null;
+}
+
 // 呼び出し側(各画面)が実装しているアクションのハンドラだけを渡すことで、
 // その画面で有効なショートカットキーを登録する。キー割り当て自体はuseShortcutBindings側で
 // カスタマイズ可能なため、ここでは常に現在の割り当てを引いて照合する。
@@ -27,7 +32,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isTypingTarget(e)) return;
+      if (isTypingTarget(e) || isModalDialogOpen()) return;
       const pressed = keyComboFromEvent(e);
       for (const [id, handler] of Object.entries(handlersRef.current) as [ShortcutId, ShortcutHandler | undefined][]) {
         if (!handler) continue;

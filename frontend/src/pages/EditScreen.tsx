@@ -13,7 +13,7 @@ import { useWavesurfer } from "../hooks/useWavesurfer";
 const ERROR_DISPLAY_MS = 4000;
 
 function EditScreen() {
-  const { uploadId, filename, channelCount, channel } = useAudioSession();
+  const { uploadId, filename, channelCount, channel, channelOutOfRange } = useAudioSession();
   const navigate = useNavigate();
   const waveformContainerRef = useRef<HTMLDivElement>(null);
   const amplitudeAxisRef = useRef<HTMLDivElement>(null);
@@ -31,7 +31,8 @@ function EditScreen() {
     return () => clearTimeout(timer);
   }, [error]);
 
-  const audioUrl = uploadId ? getAudioStreamUrl(uploadId, channel) : null;
+  // 範囲外のチャンネルはバックエンドで読み込めないため、設定で直されるまで波形を読み込まない
+  const audioUrl = uploadId && !channelOutOfRange ? getAudioStreamUrl(uploadId, channel) : null;
   const {
     isReady,
     isPlaying,
@@ -99,8 +100,14 @@ function EditScreen() {
         />
         {!isReady && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-white/80 text-gray-500">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-            波形を読み込み中...
+            {channelOutOfRange ? (
+              `ch ${channel} がありません。設定でチャンネルを変更してください`
+            ) : (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                波形を読み込み中...
+              </>
+            )}
           </div>
         )}
       </div>

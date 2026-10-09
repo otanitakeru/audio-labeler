@@ -2,8 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAudioSession } from "../hooks/useAudioSession";
 import { useLabelFile } from "../hooks/useLabelFile";
+import ConfirmDialog from "./ConfirmDialog";
 
-function AppHeader() {
+type AppHeaderProps = {
+  onOpenSettings: () => void;
+};
+
+function AppHeader({ onOpenSettings }: AppHeaderProps) {
   const { uploadId, isUploading, uploadFile } = useAudioSession();
   const {
     error: labelFileError,
@@ -11,6 +16,9 @@ function AppHeader() {
     importLabelFile,
     exportLabelFile,
     clearError: clearLabelFileError,
+    isConfirmingReplace,
+    confirmReplace,
+    cancelReplace,
   } = useLabelFile();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -97,12 +105,25 @@ function AppHeader() {
           )}
         </div>
 
-        <Link to="/settings" className="rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100">
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
+        >
           設定
-        </Link>
+        </button>
 
         {labelFileError && <p className="m-0 text-sm text-red-600">{labelFileError}</p>}
       </div>
+
+      <ConfirmDialog
+        open={isConfirmingReplace}
+        title="ラベルを読み込む"
+        message="今のラベルを読み込んだラベルで置き換えますか?"
+        confirmLabel="置き換える"
+        onConfirm={confirmReplace}
+        onCancel={cancelReplace}
+      />
     </header>
   );
 }

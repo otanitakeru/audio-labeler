@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getAudioStreamUrl } from "../api/audioApi";
 import AlertDialog from "../components/AlertDialog";
+import AudioFileDetails from "../components/AudioFileDetails";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
 import TransportControls from "../components/TransportControls";
@@ -14,13 +15,23 @@ import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useWavesurfer } from "../hooks/useWavesurfer";
 
 function EditScreen() {
-  const { uploadId, filename, channelCount, channel, channelOutOfRange } = useAudioSession();
+  const {
+    audioInfo,
+    uploadId,
+    filename,
+    channel,
+    channelOutOfRange,
+    isUploading,
+    uploadingFilename,
+    error: uploadError,
+    clearError: clearUploadError,
+  } = useAudioSession();
   const navigate = useNavigate();
   const waveformContainerRef = useRef<HTMLDivElement>(null);
   const amplitudeAxisRef = useRef<HTMLDivElement>(null);
   const { segments, validateNewSegment, addSegment, updateSegmentLabel, updateSegmentRange, removeSegment } =
     useSegments();
-  const { mainWaveformHeight, minimapHeight } = useDisplaySettings();
+  const { mainWaveformHeight, minimapHeight, playbackScrollMode } = useDisplaySettings();
   const [error, setError] = useState<string | null>(null);
   const { isDetecting, requestDetection, isConfirmingReplaceAll, confirmReplaceAll, cancelReplaceAll } =
     useSpeechDetection(setError);
@@ -29,8 +40,10 @@ function EditScreen() {
     if (!uploadId) navigate("/", { replace: true });
   }, [uploadId, navigate]);
 
-  // 範囲外のチャンネルはバックエンドで読み込めないため、設定で直されるまで波形を読み込まない
-  const audioUrl = uploadId && !channelOutOfRange ? getAudioStreamUrl(uploadId, channel) : null;
+  // 範囲外のチャンネルはバックエンドで読み込めないため、設定で直されるまで波形を読み込まない。
+  // 新しい音声のアップロード中も、別のファイルの波形が残っていると紛らわしいため、前の波形を破棄して何もない状態にする
+  // (破棄すると再生も止まる)
+  const audioUrl = uploadId && !channelOutOfRange && !isUploading ? getAudioStreamUrl(uploadId, channel) : null;
   const {
     isReady,
     isPlaying,
@@ -57,6 +70,7 @@ function EditScreen() {
     onError: setError,
     mainWaveformHeight,
     minimapHeight,
+    playbackScrollMode,
     amplitudeAxisRef,
   });
 
@@ -72,20 +86,20 @@ function EditScreen() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3 text-gray-900">
-        <span>{filename}</span>
-        {channelCount > 1 && <span className="text-gray-500">ch {channel}</span>}
+        <span>{uploadingFilename ?? filename}</span>
+        {!isUploading && audioInfo && <AudioFileDetails info={audioInfo} channel={channel} />}
       </div>
 
       <div className="flex items-center justify-between gap-3">
         {/* 読み込み中も表示しておき(操作のみ無効化)、読み込み完了時に波形の位置がずれないようにする */}
         <TransportControls
-          disabled={!isReady}
+          disabled={!isReady || isUploading}
           isPlaying={isPlaying}
           currentTime={currentTime}
           duration={duration}
           onTogglePlay={togglePlay}
         />
-        <Button variant="secondary" onClick={requestDetection} disabled={!isReady || isDetecting}>
+        <Button variant="secondary" onClick={requestDetection} disabled={!isReady || isUploading || isDetecting}>
           {isDetecting ? "検出中..." : "自動検出"}
         </Button>
       </div>
@@ -98,14 +112,18 @@ function EditScreen() {
           mainWaveformHeight={mainWaveformHeight}
           minimapHeight={minimapHeight}
         />
-        {!isReady && (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-white/80 text-gray-500">
-            {channelOutOfRange ? (
+        {/* ヘッダーから新しい音声を選んだ直後(アップロード中)も、読み込み中であることをすぐ示す */}
+        {(!isReady || isUploading) && (
+          <div
+            // wavesurferの内部要素(カーソル・区間など)はz-indexを持つため、それより前面に出す
+            className="absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-lg bg-white/80 text-gray-500"
+          >
+            {!isUploading && channelOutOfRange ? (
               `ch ${channel} がありません。設定でチャンネルを変更してください`
             ) : (
               <>
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-                波形を読み込み中...
+                {isUploading ? "音声を読み込み中..." : "波形を読み込み中..."}
               </>
             )}
           </div>
@@ -113,6 +131,8 @@ function EditScreen() {
       </div>
 
       <AlertDialog message={error} onClose={() => setError(null)} />
+      {/* ヘッダーから読み込んだ音声のエラー。ホーム画面では入力欄の下に出しているが、編集画面には表示する場所がないためダイアログで出す */}
+      <AlertDialog message={uploadError} onClose={clearUploadError} />
       <ConfirmDialog
         open={isConfirmingReplaceAll}
         title="自動検出"

@@ -25,7 +25,7 @@ async def upload_audio_file(file: UploadFile = File(...)) -> UploadedAudioInfo:
     path.write_bytes(await file.read())
 
     try:
-        duration_sec, sample_rate, channel_count = get_audio_info(path)
+        info = get_audio_info(path)
     except AudioFileError as e:
         path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -33,9 +33,11 @@ async def upload_audio_file(file: UploadFile = File(...)) -> UploadedAudioInfo:
     return UploadedAudioInfo(
         upload_id=upload_id,
         filename=file.filename,
-        duration_sec=duration_sec,
-        sample_rate=sample_rate,
-        channel_count=channel_count,
+        duration_sec=info.duration_sec,
+        sample_rate=info.sample_rate,
+        channel_count=info.channel_count,
+        bit_depth=info.bit_depth,
+        is_float=info.is_float,
     )
 
 

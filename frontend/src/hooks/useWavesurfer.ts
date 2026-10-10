@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import Minimap from "wavesurfer.js/plugins/minimap";
 import RegionsPlugin, { type Region } from "wavesurfer.js/plugins/regions";
-import type { Segment } from "../types";
+import type { PlaybackScrollMode, Segment } from "../types";
 
 // メイン波形を拡大表示する際の1秒あたりの初期ピクセル数(全体はMinimapで確認する)
 const DEFAULT_ZOOM = 100;
@@ -60,6 +60,11 @@ const LABEL_AREA_HEIGHT_PX = LABEL_BAR_HEIGHT_PX + ADJUST_BAR_HEIGHT_PX;
 function applyWheelZoomStep(prev: number, deltaY: number, min: number, max: number): number {
   const next = deltaY < 0 ? prev * WHEEL_ZOOM_FACTOR : prev / WHEEL_ZOOM_FACTOR;
   return Math.min(max, Math.max(min, next));
+}
+
+// 再生中の表示位置の動かし方を、wavesurferのautoScroll/autoCenterに対応づける
+function getPlaybackScrollOptions(mode: PlaybackScrollMode): { autoScroll: boolean; autoCenter: boolean } {
+  return { autoScroll: mode !== "none", autoCenter: mode === "center" };
 }
 
 function getPeakAmplitude(audioBuffer: AudioBuffer | null): number {
@@ -332,6 +337,7 @@ type UseWavesurferOptions = {
   onError: (message: string) => void;
   mainWaveformHeight: number;
   minimapHeight: number;
+  playbackScrollMode: PlaybackScrollMode;
   // 縦の目盛り(AmplitudeAxis)上でのCmd/Ctrl+スクロールをverticalZoomに反映するための参照
   amplitudeAxisRef: React.RefObject<HTMLDivElement | null>;
 };
@@ -366,6 +372,7 @@ export function useWavesurfer(
     onError,
     mainWaveformHeight,
     minimapHeight,
+    playbackScrollMode,
     amplitudeAxisRef,
   }: UseWavesurferOptions,
 ): UseWavesurferResult {
@@ -392,6 +399,9 @@ export function useWavesurfer(
   onDeleteSegmentRef.current = onDeleteSegment;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  // 生成時に参照するだけで、変更は下のeffectでsetOptionsにより反映する(波形を作り直さないため)
+  const playbackScrollModeRef = useRef(playbackScrollMode);
+  playbackScrollModeRef.current = playbackScrollMode;
   // addRegion()での確定済み区間の描画も region-created イベントを発火するため、
   // ドラッグ由来の保留中区間の作成だけを検知できるよう確定済み区間のIDを控えておく
   const segmentIdsRef = useRef<Set<string>>(new Set());
@@ -436,6 +446,7 @@ export function useWavesurfer(
       url: audioUrl,
       normalize: true,
       minPxPerSec: DEFAULT_ZOOM,
+      ...getPlaybackScrollOptions(playbackScrollModeRef.current),
       // 表示位置の移動は全体波形(Minimap)のドラッグとホイールで行うため、波形下のスクロールバーは見た目だけ消す
       // (このオプションはCSSで非表示にするだけで、スクロール自体はできる)
       hideScrollbar: true,
@@ -713,6 +724,12 @@ export function useWavesurfer(
       }),
     );
   }, [segments, isReady, duration]);
+
+  // 再生中の表示位置の動かし方は、波形を作り直さずに設定だけ差し替える(作り直すと音声の再取得・表示位置のリセットが起きるため)
+  useEffect(() => {
+    if (!isReady) return;
+    wavesurferRef.current?.setOptions(getPlaybackScrollOptions(playbackScrollMode));
+  }, [playbackScrollMode, isReady]);
 
   // 横方向の拡大率(1秒あたりのピクセル数)が変わるたびに反映する。ホイール由来のズームなら、
   // wavesurfer標準の「再生位置を固定する」スクロール補正を上書きし、カーソル下の位置が動かないようにする

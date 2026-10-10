@@ -9,6 +9,9 @@ class UploadedAudioInfo(BaseModel):
     duration_sec: float
     sample_rate: int
     channel_count: int
+    # 量子化ビット数。μ-lawなど、ビット数で表せない形式ではNone
+    bit_depth: int | None
+    is_float: bool
 
 
 class VadParams(BaseModel):

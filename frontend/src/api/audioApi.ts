@@ -9,6 +9,8 @@ type UploadedAudioInfoResponse = {
   duration_sec: number;
   sample_rate: number;
   channel_count: number;
+  bit_depth: number | null;
+  is_float: boolean;
 };
 
 export async function uploadAudioFile(file: File): Promise<AudioFileInfo> {
@@ -27,6 +29,8 @@ export async function uploadAudioFile(file: File): Promise<AudioFileInfo> {
     durationSec: data.duration_sec,
     sampleRate: data.sample_rate,
     channelCount: data.channel_count,
+    bitDepth: data.bit_depth,
+    isFloat: data.is_float,
   };
 }
 

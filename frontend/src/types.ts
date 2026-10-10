@@ -4,6 +4,9 @@ export type AudioFileInfo = {
   durationSec: number;
   sampleRate: number;
   channelCount: number;
+  // 量子化ビット数。μ-lawなど、ビット数で表せない形式ではnull
+  bitDepth: number | null;
+  isFloat: boolean;
 };
 
 export type Segment = {
@@ -42,3 +45,9 @@ export type VadSettings = {
   // 前後の余白を足したあとの区間同士の間がこれより短ければつなげる。0なら結合しない
   minSilenceAfterVadMs: number;
 };
+
+// 再生中、カーソルが表示範囲を進んでいくときの表示位置の動かし方
+// - center: カーソルが中央に来たら、中央に保ったまま波形を流す
+// - page: カーソルが表示範囲の端に来たら、次の範囲へ切り替える
+// - none: 表示位置を動かさない(カーソルは表示範囲の外へ出ていく)
+export type PlaybackScrollMode = "center" | "page" | "none";

@@ -7,6 +7,7 @@ import { AudioSessionProvider, useAudioSession } from "./hooks/useAudioSession";
 import { DisplaySettingsProvider } from "./hooks/useDisplaySettings";
 import { SegmentsProvider } from "./hooks/useSegments";
 import { ShortcutBindingsProvider } from "./hooks/useShortcutBindings";
+import { VadSettingsProvider } from "./hooks/useVadSettings";
 import EditScreen from "./pages/EditScreen";
 import HomeScreen from "./pages/HomeScreen";
 
@@ -51,9 +52,11 @@ function App() {
       <SegmentsProvider>
         <DisplaySettingsProvider>
           <ShortcutBindingsProvider>
-            <Router>
-              <AppLayout />
-            </Router>
+            <VadSettingsProvider>
+              <Router>
+                <AppLayout />
+              </Router>
+            </VadSettingsProvider>
           </ShortcutBindingsProvider>
         </DisplaySettingsProvider>
       </SegmentsProvider>

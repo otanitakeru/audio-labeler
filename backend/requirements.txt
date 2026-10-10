@@ -1,5 +1,10 @@
+# PyTorchはGPU版(数GB)ではなくCPU版を入れる
+--extra-index-url https://download.pytorch.org/whl/cpu
 fastapi
 uvicorn[standard]
 numpy
 soundfile
 python-multipart
+torch
+torchaudio
+silero-vad

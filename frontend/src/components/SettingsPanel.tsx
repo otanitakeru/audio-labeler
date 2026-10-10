@@ -3,6 +3,7 @@ import Button from "./Button";
 import ChannelInput from "./ChannelInput";
 import NumberInput from "./NumberInput";
 import ShortcutBindingRow from "./ShortcutBindingRow";
+import VadSettingsSection from "./VadSettingsSection";
 import { useAudioSession } from "../hooks/useAudioSession";
 import {
   DEFAULT_MAIN_WAVEFORM_HEIGHT,
@@ -14,9 +15,10 @@ import {
   useDisplaySettings,
 } from "../hooks/useDisplaySettings";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
+import { findVadSettingsError, useVadSettings } from "../hooks/useVadSettings";
 import { SHORTCUT_CATALOG, SHORTCUT_GROUPS } from "../shortcuts/catalog";
 
-const CATEGORIES = ["音声読み込み", "表示設定", "ショートカットキー"] as const;
+const CATEGORIES = ["音声読み込み", "表示設定", "自動検出", "ショートカットキー"] as const;
 type Category = (typeof CATEGORIES)[number];
 
 type SettingsPanelProps = {
@@ -30,19 +32,23 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { uploadId, channel, channelCount, setChannel } = useAudioSession();
   const { mainWaveformHeight, setMainWaveformHeight, minimapHeight, setMinimapHeight } = useDisplaySettings();
   const { bindings, setBindings } = useShortcutBindings();
+  const { vadSettings, setVadSettings } = useVadSettings();
 
   const [draftChannel, setDraftChannel] = useState(channel);
   const [draftMainWaveformHeight, setDraftMainWaveformHeight] = useState(mainWaveformHeight);
   const [draftMinimapHeight, setDraftMinimapHeight] = useState(minimapHeight);
   const [draftBindings, setDraftBindings] = useState(bindings);
+  const [draftVadSettings, setDraftVadSettings] = useState(vadSettings);
 
   const draftChannelOutOfRange = uploadId !== null && draftChannel >= channelCount;
+  const vadSettingsError = findVadSettingsError(draftVadSettings);
 
   const applyAndClose = () => {
     setChannel(draftChannel);
     setMainWaveformHeight(draftMainWaveformHeight);
     setMinimapHeight(draftMinimapHeight);
     setBindings(draftBindings);
+    setVadSettings(draftVadSettings);
     onClose();
   };
 
@@ -137,6 +143,8 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
           </div>
         )}
 
+        {category === "自動検出" && <VadSettingsSection settings={draftVadSettings} onChange={setDraftVadSettings} />}
+
         {category === "ショートカットキー" && (
           <div className="flex flex-1 flex-col gap-6 overflow-y-auto">
             <h2 className="m-0 text-xl font-semibold text-gray-900">ショートカットキー</h2>
@@ -160,11 +168,13 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
         )}
       </div>
 
-      <div className="flex justify-end gap-3 border-t border-gray-300 pt-4">
+      <div className="flex items-center justify-end gap-3 border-t border-gray-300 pt-4">
+        {/* 別のカテゴリを開いていてもOKが押せない理由が分かるよう、ここにも出す */}
+        {vadSettingsError && <p className="m-0 mr-auto text-sm text-red-600">自動検出: {vadSettingsError}</p>}
         <Button variant="secondary" onClick={onClose}>
           キャンセル
         </Button>
-        <Button variant="primary" onClick={applyAndClose}>
+        <Button variant="primary" onClick={applyAndClose} disabled={vadSettingsError !== null}>
           OK
         </Button>
       </div>

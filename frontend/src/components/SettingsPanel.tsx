@@ -14,6 +14,12 @@ import {
   MIN_MINIMAP_HEIGHT,
   useDisplaySettings,
 } from "../hooks/useDisplaySettings";
+import {
+  DEFAULT_EDITING_SETTINGS,
+  MAX_SEGMENT_NUDGE_STEP_MS,
+  MIN_SEGMENT_NUDGE_STEP_MS,
+  useEditingSettings,
+} from "../hooks/useEditingSettings";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import { findVadSettingsError, useVadSettings } from "../hooks/useVadSettings";
 import { SHORTCUT_CATALOG, SHORTCUT_GROUPS } from "../shortcuts/catalog";
@@ -25,7 +31,7 @@ const PLAYBACK_SCROLL_MODE_OPTIONS: { value: PlaybackScrollMode; label: string }
   { value: "none", label: "動かさない" },
 ];
 
-const CATEGORIES = ["音声読み込み", "表示設定", "自動検出", "ショートカットキー"] as const;
+const CATEGORIES = ["音声読み込み", "表示設定", "編集", "自動検出", "ショートカットキー"] as const;
 type Category = (typeof CATEGORIES)[number];
 
 type SettingsPanelProps = {
@@ -47,6 +53,7 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   } = useDisplaySettings();
   const { bindings, setBindings } = useShortcutBindings();
   const { vadSettings, setVadSettings } = useVadSettings();
+  const { editingSettings, setEditingSettings } = useEditingSettings();
 
   const [draftChannel, setDraftChannel] = useState(channel);
   const [draftMainWaveformHeight, setDraftMainWaveformHeight] = useState(mainWaveformHeight);
@@ -54,6 +61,7 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [draftPlaybackScrollMode, setDraftPlaybackScrollMode] = useState(playbackScrollMode);
   const [draftBindings, setDraftBindings] = useState(bindings);
   const [draftVadSettings, setDraftVadSettings] = useState(vadSettings);
+  const [draftEditingSettings, setDraftEditingSettings] = useState(editingSettings);
 
   const draftChannelOutOfRange = uploadId !== null && draftChannel >= channelCount;
   const vadSettingsError = findVadSettingsError(draftVadSettings);
@@ -65,6 +73,7 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
     setPlaybackScrollMode(draftPlaybackScrollMode);
     setBindings(draftBindings);
     setVadSettings(draftVadSettings);
+    setEditingSettings(draftEditingSettings);
     onClose();
   };
 
@@ -171,6 +180,40 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
                   {option.label}
                 </label>
               ))}
+            </div>
+          </div>
+        )}
+
+        {category === "編集" && (
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto">
+            <h2 className="m-0 text-xl font-semibold text-gray-900">編集</h2>
+
+            <div className="flex flex-col gap-2">
+              <div className="font-semibold text-gray-900">境界をずらす量</div>
+              <p className="m-0 text-sm text-gray-500">開始・終了をずらすショートカット1回あたりの移動量です。</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <NumberInput
+                  unit="ms"
+                  min={MIN_SEGMENT_NUDGE_STEP_MS}
+                  max={MAX_SEGMENT_NUDGE_STEP_MS}
+                  value={draftEditingSettings.segmentNudgeStepMs}
+                  onChange={(segmentNudgeStepMs) =>
+                    setDraftEditingSettings((prev) => ({ ...prev, segmentNudgeStepMs }))
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDraftEditingSettings((prev) => ({
+                      ...prev,
+                      segmentNudgeStepMs: DEFAULT_EDITING_SETTINGS.segmentNudgeStepMs,
+                    }))
+                  }
+                  className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  デフォルトに戻す
+                </button>
+              </div>
             </div>
           </div>
         )}

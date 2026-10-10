@@ -3,7 +3,21 @@
 // 実際の挙動(ハンドラ)は各画面がuseKeyboardShortcutsで個別に登録する。
 
 export type ShortcutId =
-  "togglePlay" | "labelSelection" | "deleteSelectedSegment" | "deselectSegment" | "undo" | "redo";
+  | "togglePlay"
+  | "labelSelection"
+  | "deleteSelectedSegment"
+  | "deselectSegment"
+  | "selectPreviousSegment"
+  | "selectNextSegment"
+  | "editSegmentLabel"
+  | "undo"
+  | "redo"
+  | "mergeWithPreviousSegment"
+  | "mergeWithNextSegment"
+  | "nudgeSegmentStartLeft"
+  | "nudgeSegmentStartRight"
+  | "nudgeSegmentEndLeft"
+  | "nudgeSegmentEndRight";
 
 export type KeyCombo = {
   key: string;
@@ -14,7 +28,7 @@ export type KeyCombo = {
 };
 
 // 設定ダイアログでショートカットをまとめて表示する単位。配列の順に表示する
-export const SHORTCUT_GROUPS = ["基本操作", "ラベル"] as const;
+export const SHORTCUT_GROUPS = ["基本操作", "ラベル", "区間の調整"] as const;
 export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
 
 export type ShortcutDef = {
@@ -42,7 +56,11 @@ export const SHORTCUT_CATALOG: ShortcutDef[] = [
   },
   // MacのdeleteキーはBackspaceとして送られるため、こちらを初期値にする
   { id: "deleteSelectedSegment", label: "選択中の区間を削除", group: "ラベル", defaultCombo: combo("Backspace") },
-  { id: "deselectSegment", label: "区間の選択を解除", group: "ラベル", defaultCombo: combo("Enter") },
+  { id: "deselectSegment", label: "区間の選択を解除", group: "ラベル", defaultCombo: combo("Escape") },
+  { id: "selectPreviousSegment", label: "前の区間を選択", group: "ラベル", defaultCombo: combo("ArrowLeft") },
+  { id: "selectNextSegment", label: "次の区間を選択", group: "ラベル", defaultCombo: combo("ArrowRight") },
+  // 編集中のEnterは文言の確定になるため、Enterで編集の開始・確定を切り替えられる
+  { id: "editSegmentLabel", label: "選択中の区間の文言を編集", group: "ラベル", defaultCombo: combo("Enter") },
   { id: "undo", label: "元に戻す", group: "ラベル", defaultCombo: combo("z", PRIMARY_MODIFIER) },
   // やり直しはOSごとの慣習に合わせる(Macは⌘ + Shift + Z、Windows等はCtrl + Y)
   {
@@ -50,6 +68,44 @@ export const SHORTCUT_CATALOG: ShortcutDef[] = [
     label: "やり直す",
     group: "ラベル",
     defaultCombo: IS_MAC ? combo("z", { meta: true, shift: true }) : combo("y", { ctrl: true }),
+  },
+  // Alt + ←はWindowsのブラウザでは「戻る」だが、このショートカットは結合する相手がなくてもキーを素通ししないため使える
+  {
+    id: "mergeWithPreviousSegment",
+    label: "前の区間と結合",
+    group: "区間の調整",
+    defaultCombo: combo("ArrowLeft", { alt: true }),
+  },
+  {
+    id: "mergeWithNextSegment",
+    label: "次の区間と結合",
+    group: "区間の調整",
+    defaultCombo: combo("ArrowRight", { alt: true }),
+  },
+  // ⌘ + ←/→ はMacのブラウザでは「戻る/進む」だが、このショートカットは選択中の区間がなくてもキーを素通ししないため使える
+  {
+    id: "nudgeSegmentStartLeft",
+    label: "開始を左へずらす",
+    group: "区間の調整",
+    defaultCombo: combo("ArrowLeft", PRIMARY_MODIFIER),
+  },
+  {
+    id: "nudgeSegmentStartRight",
+    label: "開始を右へずらす",
+    group: "区間の調整",
+    defaultCombo: combo("ArrowRight", PRIMARY_MODIFIER),
+  },
+  {
+    id: "nudgeSegmentEndLeft",
+    label: "終了を左へずらす",
+    group: "区間の調整",
+    defaultCombo: combo("ArrowLeft", { ...PRIMARY_MODIFIER, shift: true }),
+  },
+  {
+    id: "nudgeSegmentEndRight",
+    label: "終了を右へずらす",
+    group: "区間の調整",
+    defaultCombo: combo("ArrowRight", { ...PRIMARY_MODIFIER, shift: true }),
   },
 ];
 
@@ -65,7 +121,8 @@ const KEY_DISPLAY_NAMES: Record<string, string> = {
 export function formatKeyCombo(target: KeyCombo): string {
   const parts: string[] = [];
   if (target.ctrl) parts.push("Ctrl");
-  if (target.alt) parts.push("Alt");
+  // MacではAltキーはOption(⌥)のため、⌘と同じく記号で表示する
+  if (target.alt) parts.push(IS_MAC ? "⌥" : "Alt");
   if (target.shift) parts.push("Shift");
   if (target.meta) parts.push("⌘");
   const normalizedKey = target.key.toLowerCase();

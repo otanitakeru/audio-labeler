@@ -5,6 +5,7 @@ import Dialog from "./components/Dialog";
 import SettingsPanel from "./components/SettingsPanel";
 import { AudioSessionProvider, useAudioSession } from "./hooks/useAudioSession";
 import { DisplaySettingsProvider } from "./hooks/useDisplaySettings";
+import { EditingSettingsProvider } from "./hooks/useEditingSettings";
 import { SegmentsProvider } from "./hooks/useSegments";
 import { ShortcutBindingsProvider } from "./hooks/useShortcutBindings";
 import { VadSettingsProvider } from "./hooks/useVadSettings";
@@ -53,9 +54,11 @@ function App() {
         <DisplaySettingsProvider>
           <ShortcutBindingsProvider>
             <VadSettingsProvider>
-              <Router>
-                <AppLayout />
-              </Router>
+              <EditingSettingsProvider>
+                <Router>
+                  <AppLayout />
+                </Router>
+              </EditingSettingsProvider>
             </VadSettingsProvider>
           </ShortcutBindingsProvider>
         </DisplaySettingsProvider>

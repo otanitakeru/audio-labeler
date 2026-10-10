@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   findConflict,
   formatKeyCombo,
@@ -22,13 +22,15 @@ type ShortcutBindingRowProps = {
 function ShortcutBindingRow({ def, bindings, onChange }: ShortcutBindingRowProps) {
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const recordButtonRef = useRef<HTMLButtonElement>(null);
 
   const currentCombo = bindings[def.id];
   const isCustomized = !isSameKeyCombo(currentCombo, def.defaultCombo);
 
-  const startRecording = () => {
+  // Escもショートカットとして割り当てられるよう、キー入力の受付はキーではなく、ボタンをもう一度押すか他の場所を押してやめる
+  const toggleRecording = () => {
     setError(null);
-    setRecording(true);
+    setRecording((prev) => !prev);
   };
 
   useEffect(() => {
@@ -37,10 +39,6 @@ function ShortcutBindingRow({ def, bindings, onChange }: ShortcutBindingRowProps
     const onKeyDown = (e: KeyboardEvent) => {
       // キー入力の受付中は、Escで設定ダイアログ自体が閉じたりEnterでボタンが押されたりしないよう標準動作を止める
       e.preventDefault();
-      if (e.key === "Escape") {
-        setRecording(false);
-        return;
-      }
       if (MODIFIER_ONLY_KEYS.has(e.key.toLowerCase())) return;
 
       const combo = keyComboFromEvent(e);
@@ -54,16 +52,27 @@ function ShortcutBindingRow({ def, bindings, onChange }: ShortcutBindingRowProps
       setRecording(false);
     };
 
+    // ボタン自体を押したときはonClick(toggleRecording)に任せる
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.target instanceof Node && recordButtonRef.current?.contains(e.target)) return;
+      setRecording(false);
+    };
+
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
   }, [recording, def.id, bindings, onChange]);
 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <span className="w-52 shrink-0 text-gray-900">{def.label}</span>
       <button
+        ref={recordButtonRef}
         type="button"
-        onClick={startRecording}
+        onClick={toggleRecording}
         className="min-w-24 cursor-pointer rounded-md border border-gray-300 bg-gray-50 px-2 py-1 text-center font-mono text-sm text-gray-700 hover:bg-gray-100"
       >
         {recording ? "キーを入力..." : formatKeyCombo(currentCombo)}

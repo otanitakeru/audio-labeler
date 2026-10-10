@@ -2,8 +2,9 @@ import { useEffect, useRef } from "react";
 import { isSameKeyCombo, keyComboFromEvent, type ShortcutId } from "../shortcuts/catalog";
 import { useShortcutBindings } from "./useShortcutBindings";
 
-// falseを返したハンドラは「今は該当する操作がない」とみなし、キーのブラウザ標準動作(フォーカス中のボタンでのEnter等)を妨げない
-type ShortcutHandler = () => void | boolean;
+// falseを返したハンドラは「今は該当する操作がない」とみなし、キーのブラウザ標準動作(フォーカス中のボタンでのEnter等)を妨げない。
+// 押し続けによる繰り返し(e.repeat)で挙動を変えたい操作のため、キーイベントも渡す
+type ShortcutHandler = (e: KeyboardEvent) => void | boolean;
 type ShortcutHandlers = Partial<Record<ShortcutId, ShortcutHandler>>;
 
 // wavesurferのラベル帯のようにShadow DOM内の要素で入力している場合、document側ではe.targetが
@@ -37,7 +38,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
       for (const [id, handler] of Object.entries(handlersRef.current) as [ShortcutId, ShortcutHandler | undefined][]) {
         if (!handler) continue;
         if (isSameKeyCombo(getBindingRef.current(id), pressed)) {
-          if (handler() === false) return;
+          if (handler(e) === false) return;
           e.preventDefault();
           return;
         }

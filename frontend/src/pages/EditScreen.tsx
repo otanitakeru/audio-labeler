@@ -9,6 +9,7 @@ import TransportControls from "../components/TransportControls";
 import Waveform from "../components/Waveform";
 import { useAudioSession } from "../hooks/useAudioSession";
 import { useDisplaySettings } from "../hooks/useDisplaySettings";
+import { useEditingSettings } from "../hooks/useEditingSettings";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useSegments } from "../hooks/useSegments";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
@@ -36,10 +37,12 @@ function EditScreen() {
     updateSegmentLabel,
     updateSegmentRange,
     removeSegment,
+    mergeWithAdjacentSegment,
     undo,
     redo,
   } = useSegments();
   const { mainWaveformHeight, minimapHeight, playbackScrollMode } = useDisplaySettings();
+  const { editingSettings } = useEditingSettings();
   const [error, setError] = useState<string | null>(null);
   const { isDetecting, requestDetection, isConfirmingReplaceAll, confirmReplaceAll, cancelReplaceAll } =
     useSpeechDetection(setError);
@@ -61,6 +64,10 @@ function EditScreen() {
     togglePlay,
     deleteSelectedSegment,
     deselectSegment,
+    selectAdjacentSegment,
+    editSelectedSegmentLabel,
+    mergeSelectedSegment,
+    nudgeSelectedSegment,
     startLabelingSelection,
   } = useWavesurfer(waveformContainerRef, audioUrl, {
     segments,
@@ -70,15 +77,17 @@ function EditScreen() {
       return result.success ? null : result.error;
     },
     onUpdateLabel: updateSegmentLabel,
-    onUpdateRange: (id, startSec, endSec) => {
-      const result = updateSegmentRange(id, startSec, endSec);
+    onUpdateRange: (id, startSec, endSec, historyGroupKey) => {
+      const result = updateSegmentRange(id, startSec, endSec, historyGroupKey);
       return result.success ? null : result.error;
     },
     onDeleteSegment: removeSegment,
+    onMergeSegment: mergeWithAdjacentSegment,
     onError: setError,
     mainWaveformHeight,
     minimapHeight,
     playbackScrollMode,
+    segmentNudgeStepMs: editingSettings.segmentNudgeStepMs,
     amplitudeAxisRef,
   });
 
@@ -87,8 +96,17 @@ function EditScreen() {
     labelSelection: startLabelingSelection,
     deleteSelectedSegment,
     deselectSegment,
+    selectPreviousSegment: () => selectAdjacentSegment("previous"),
+    selectNextSegment: () => selectAdjacentSegment("next"),
+    editSegmentLabel: editSelectedSegmentLabel,
     undo,
     redo,
+    mergeWithPreviousSegment: () => mergeSelectedSegment("previous"),
+    mergeWithNextSegment: () => mergeSelectedSegment("next"),
+    nudgeSegmentStartLeft: (e) => nudgeSelectedSegment("start", "left", e.repeat),
+    nudgeSegmentStartRight: (e) => nudgeSelectedSegment("start", "right", e.repeat),
+    nudgeSegmentEndLeft: (e) => nudgeSelectedSegment("end", "left", e.repeat),
+    nudgeSegmentEndRight: (e) => nudgeSelectedSegment("end", "right", e.repeat),
   });
 
   if (!uploadId) return null;

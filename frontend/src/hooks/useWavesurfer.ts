@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import Minimap from "wavesurfer.js/plugins/minimap";
 import RegionsPlugin, { type Region } from "wavesurfer.js/plugins/regions";
-import type { PlaybackScrollMode, Segment } from "../types";
+import { findAdjacentSegment } from "./useSegments";
+import type { PlaybackScrollMode, Segment, SegmentDirection } from "../types";
 
 // メイン波形を拡大表示する際の1秒あたりの初期ピクセル数(全体はMinimapで確認する)
 const DEFAULT_ZOOM = 100;
@@ -19,6 +20,8 @@ const MAX_VERTICAL_ZOOM = 10;
 const WHEEL_ZOOM_FACTOR = 1.1;
 // リサイズ/ドラッグ選択時に区間の長さが0にならないようにする下限(秒)
 const MIN_REGION_LENGTH_SEC = 0.01;
+// キーボードで区間を選択して表示位置を動かすとき、区間の手前に空けておく余白(表示幅に対する割合)
+const SCROLL_MARGIN_RATIO = 0.1;
 
 const SELECTION_REGION_COLOR = "rgba(234, 88, 12, 0.15)";
 type SegmentColors = {
@@ -65,6 +68,21 @@ function applyWheelZoomStep(prev: number, deltaY: number, min: number, max: numb
 // 再生中の表示位置の動かし方を、wavesurferのautoScroll/autoCenterに対応づける
 function getPlaybackScrollOptions(mode: PlaybackScrollMode): { autoScroll: boolean; autoCenter: boolean } {
   return { autoScroll: mode !== "none", autoCenter: mode === "center" };
+}
+
+// 小数の足し引き(例: 1.23 - 0.01 = 1.2199999999999998)で生じる誤差だけを取り除く。
+// 1ナノ秒の桁はサンプリング周期よりはるかに細かく、意味のある桁を切り詰めることにはならない(PLAN.md 3章)
+function roundFloatingError(sec: number): number {
+  return Number(sec.toFixed(9));
+}
+
+// 区間が表示範囲に収まっていなければ、区間の先頭が左端の少し内側に来るよう表示位置を動かす
+function scrollSegmentIntoView(wavesurfer: WaveSurfer, segment: Segment): void {
+  const pxPerSec = wavesurfer.getWrapper().clientWidth / wavesurfer.getDuration();
+  const viewStartSec = wavesurfer.getScroll() / pxPerSec;
+  const viewWidthSec = wavesurfer.getWidth() / pxPerSec;
+  if (segment.startSec >= viewStartSec && segment.endSec <= viewStartSec + viewWidthSec) return;
+  wavesurfer.setScrollTime(Math.max(0, segment.startSec - viewWidthSec * SCROLL_MARGIN_RATIO));
 }
 
 function getPeakAmplitude(audioBuffer: AudioBuffer | null): number {
@@ -331,13 +349,17 @@ type UseWavesurferOptions = {
   onAddSegment: (startSec: number, endSec: number, label: string) => string | null;
   onUpdateLabel: (id: string, label: string) => void;
   // 調整帯での移動/幅変更が確定したときに呼ばれる。エラーがあればメッセージを返す(呼び出し側で元の位置に戻す)
-  onUpdateRange: (id: string, startSec: number, endSec: number) => string | null;
+  // historyGroupKeyが直前の変更と同じなら、履歴上1つの操作にまとめられる
+  onUpdateRange: (id: string, startSec: number, endSec: number, historyGroupKey?: string) => string | null;
   onDeleteSegment: (id: string) => void;
+  onMergeSegment: (id: string, direction: SegmentDirection) => void;
   // 重なりなど、ユーザー操作に起因するエラーをまとめて通知する
   onError: (message: string) => void;
   mainWaveformHeight: number;
   minimapHeight: number;
   playbackScrollMode: PlaybackScrollMode;
+  // ショートカットで区間の開始・終了を1回ずらす量(ミリ秒)。ドラッグでは合わせにくい細かい調整に使う
+  segmentNudgeStepMs: number;
   // 縦の目盛り(AmplitudeAxis)上でのCmd/Ctrl+スクロールをverticalZoomに反映するための参照
   amplitudeAxisRef: React.RefObject<HTMLDivElement | null>;
 };
@@ -354,6 +376,13 @@ type UseWavesurferResult = {
   // 選択中の区間がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   deleteSelectedSegment: () => boolean;
   deselectSegment: () => boolean;
+  // 選択中の区間の前/次の区間を選択する。何も選択していなければ再生位置を基準にする。該当する区間がなければfalse
+  selectAdjacentSegment: (direction: SegmentDirection) => boolean;
+  // 選択中の区間の文言編集を始める(ラベル帯のダブルクリックと同じ)
+  editSelectedSegmentLabel: () => boolean;
+  mergeSelectedSegment: (direction: SegmentDirection) => void;
+  // 選択中の区間の開始または終了を、決まった量だけ左右にずらす。isRepeatはキーの押し続けによる繰り返しか
+  nudgeSelectedSegment: (edge: "start" | "end", direction: "left" | "right", isRepeat: boolean) => void;
   // 選択範囲(ドラッグ選択)に対してラベル入力を始める。選択範囲がない・入力中ならfalse。
   // 他の区間と重なるなど追加できない範囲なら、入力は始めずonErrorで知らせる
   startLabelingSelection: () => boolean;
@@ -369,10 +398,12 @@ export function useWavesurfer(
     onUpdateLabel,
     onUpdateRange,
     onDeleteSegment,
+    onMergeSegment,
     onError,
     mainWaveformHeight,
     minimapHeight,
     playbackScrollMode,
+    segmentNudgeStepMs,
     amplitudeAxisRef,
   }: UseWavesurferOptions,
 ): UseWavesurferResult {
@@ -397,6 +428,8 @@ export function useWavesurfer(
   onUpdateRangeRef.current = onUpdateRange;
   const onDeleteSegmentRef = useRef(onDeleteSegment);
   onDeleteSegmentRef.current = onDeleteSegment;
+  const onMergeSegmentRef = useRef(onMergeSegment);
+  onMergeSegmentRef.current = onMergeSegment;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   // 生成時に参照するだけで、変更は下のeffectでsetOptionsにより反映する(波形を作り直さないため)
@@ -407,9 +440,17 @@ export function useWavesurfer(
   const segmentIdsRef = useRef<Set<string>>(new Set());
   segmentIdsRef.current = new Set(segments.map((s) => s.id));
   // ラベル帯をクリックして編集・移動・削除できる状態になっている確定済み区間。同時に1つだけ
-  const activeSegmentRef = useRef<{ id: string; element: HTMLElement; deactivate: () => void } | null>(null);
-  // 描画済みの区間ごとに、最新の区間データ(出どころによる配色・位置・ラベル)を反映する関数
-  const segmentUpdatersRef = useRef(new Map<string, (segment: Segment) => void>());
+  const activeSegmentRef = useRef<{
+    id: string;
+    element: HTMLElement;
+    deactivate: () => void;
+    startEditing: () => void;
+  } | null>(null);
+  // 描画済みの区間ごとに、最新の区間データ(出どころによる配色・位置・ラベル)を反映する関数と、
+  // キーボード操作から選択するための関数
+  const segmentControlsRef = useRef(new Map<string, { update: (segment: Segment) => void; activate: () => void }>());
+  // キーを押し始めるたびに作り直し、押し続けている間のずらしを履歴上1つの操作にまとめるためのキー
+  const nudgeHistoryGroupKeyRef = useRef("");
 
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -534,6 +575,15 @@ export function useWavesurfer(
     };
   }, [containerRef, audioUrl, mainWaveformHeight, minimapHeight]);
 
+  // 選択範囲を解除する(ラベル入力中なら入力も取り消される)。refだけを参照するため、一度だけ登録するハンドラからも呼べる
+  const clearSelectionRegion = () => {
+    const selection = selectionRegionRef.current;
+    if (!selection) return;
+    selectionRegionRef.current = null;
+    labelingRef.current = null;
+    selection.remove();
+  };
+
   // 他の場所を押したら、その時点でアクティブな区間を非アクティブに戻し、選択範囲も解除する(Audacityと同様、
   // 選択範囲の上を押した場合も解除し、ドラッグならそのまま新しい選択範囲になる)。区間側や他の要素がstopPropagationしていても
   // 取りこぼさないよう、キャプチャフェーズで拾う。wavesurferは波形をShadow DOM内に描画しており、
@@ -548,13 +598,9 @@ export function useWavesurfer(
       const active = activeSegmentRef.current;
       if (active && !path.includes(active.element)) active.deactivate();
 
-      const selection = selectionRegionRef.current;
-      if (!selection) return;
       // ラベル入力欄の操作では選択範囲を解除しない
       if (labelingRef.current && path.includes(labelingRef.current.content)) return;
-      selectionRegionRef.current = null;
-      labelingRef.current = null;
-      selection.remove();
+      clearSelectionRegion();
     };
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
     return () => document.removeEventListener("pointerdown", onPointerDown, { capture: true });
@@ -562,7 +608,8 @@ export function useWavesurfer(
 
   // 確定済み区間を波形上に同期表示する(選択範囲は残す)。
   // 誤操作を防ぐため、確定済み区間は普段は表示のみとし、ラベル帯をクリックしたときだけアクティブ(選択)にして
-  // 調整帯(ラベル帯の下)での移動/幅変更・ショートカットでの削除を有効にする。ラベル文字の編集はさらにダブルクリックしたときだけ。
+  // 調整帯(ラベル帯の下)での移動/幅変更・ショートカットでの削除を有効にする。
+  // ラベル文字の編集はさらにダブルクリックかショートカット(初期値: Enter)を押したときだけ。
   // 選択中にそのまま文字編集状態にしないのは、Delete等のキーが「区間の削除」か「文字の削除」か曖昧になるため。
   // 波形の中で区間の外側を押すと非アクティブに戻る。
   // RegionsPluginのcontentEditableオプションは常時編集可能にしてしまうため使わず、編集可否はここで切り替える。
@@ -579,13 +626,13 @@ export function useWavesurfer(
       existingIds.add(region.id);
       if (currentIds.has(region.id)) continue;
       if (activeSegmentRef.current?.id === region.id) activeSegmentRef.current = null;
-      segmentUpdatersRef.current.delete(region.id);
+      segmentControlsRef.current.delete(region.id);
       region.remove();
     }
 
     for (const segment of segments) {
       if (existingIds.has(segment.id)) {
-        segmentUpdatersRef.current.get(segment.id)?.(segment);
+        segmentControlsRef.current.get(segment.id)?.update(segment);
         continue;
       }
       const id = segment.id;
@@ -653,13 +700,13 @@ export function useWavesurfer(
       };
       const activate = () => {
         activeSegmentRef.current?.deactivate();
-        activeSegmentRef.current = { id, element, deactivate };
+        activeSegmentRef.current = { id, element, deactivate, startEditing };
         adjustBar.setActive(true);
         region.setOptions({ color: colors.activeRegion });
       };
       // 区間は作り直さないため、同じIDのまま中身が変わったとき(候補の確定、元に戻す/やり直す)はここで見た目に反映する。
       // 移動・幅変更・ラベル編集の直後は見た目が既に最新なので、値が変わったときだけ触る
-      segmentUpdatersRef.current.set(id, (latest) => {
+      const update = (latest: Segment) => {
         colors = SEGMENT_COLORS[latest.source];
         setLabelContentColors(content, colors.labelBackground, colors.labelBorder);
         region.setOptions({ color: activeSegmentRef.current?.id === id ? colors.activeRegion : colors.region });
@@ -667,7 +714,8 @@ export function useWavesurfer(
           region.setOptions({ start: latest.startSec, end: latest.endSec });
         }
         if (!content.isContentEditable && content.textContent !== latest.label) content.textContent = latest.label;
-      });
+      };
+      segmentControlsRef.current.set(id, { update, activate });
       const startEditing = () => {
         content.contentEditable = "true";
         content.style.cursor = "text";
@@ -689,15 +737,15 @@ export function useWavesurfer(
         if (activeSegmentRef.current?.id !== id) activate();
         startEditing();
       });
+      // Enterで確定・Escで取り消して文字編集だけを終え、選択は残す(続けて結合・隣の区間への移動などをキーで行えるようにするため)。
+      // blurで編集状態が外れた後にdocumentへ伝わると、同じキーが「文言の編集」「選択の解除」のショートカットとして
+      // 続けて発火してしまうため、伝播を止める
       content.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          deactivate();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          content.textContent = getCurrentLabel();
-          deactivate();
-        }
+        if (e.key !== "Enter" && e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "Escape") content.textContent = getCurrentLabel();
+        content.blur();
       });
       // 文字編集中に区間本体をドラッグしに行った場合もフォーカスが外れるため、確定は非アクティブ化ではなくblurで行う。
       // 確定後は選択状態のまま文字編集だけを終える
@@ -824,6 +872,71 @@ export function useWavesurfer(
     return true;
   };
 
+  // キーボードで選択を移したときは、続けて再生ボタン・ショートカットでその区間を聞けるよう、再生を止めて再生位置を区間の先頭に置く。
+  // ラベル帯のクリックと同様、選択範囲は解除する(残っていると再生の対象が選択範囲になってしまうため)
+  const selectAdjacentSegment = (direction: SegmentDirection) => {
+    const wavesurfer = wavesurferRef.current;
+    if (!wavesurfer) return false;
+    const segments = segmentsRef.current;
+    const activeId = activeSegmentRef.current?.id;
+    let target: Segment | undefined;
+    if (activeId) {
+      target = findAdjacentSegment(segments, activeId, direction);
+    } else {
+      const time = wavesurfer.getCurrentTime();
+      const sorted = [...segments].sort((a, b) => a.startSec - b.startSec);
+      target = direction === "next" ? sorted.find((s) => s.startSec > time) : sorted.findLast((s) => s.startSec < time);
+    }
+    const controls = target && segmentControlsRef.current.get(target.id);
+    if (!target || !controls) return false;
+    clearSelectionRegion();
+    controls.activate();
+    wavesurfer.pause();
+    wavesurfer.setTime(target.startSec);
+    scrollSegmentIntoView(wavesurfer, target);
+    return true;
+  };
+
+  const editSelectedSegmentLabel = () => {
+    const active = activeSegmentRef.current;
+    if (!active) return false;
+    active.startEditing();
+    return true;
+  };
+
+  // 選択中の区間や結合する相手がなくてもキーは素通ししない。初期値のAlt + ←はWindowsのブラウザでは「戻る」のため、
+  // 素通しすると編集画面から離れてしまう
+  const mergeSelectedSegment = (direction: SegmentDirection) => {
+    const active = activeSegmentRef.current;
+    if (active) onMergeSegmentRef.current(active.id, direction);
+  };
+
+  // 調整帯でのドラッグと同じ制約(音声の範囲内・最短の長さ)をかけ、重なりなどはonUpdateRangeの検証に任せる。
+  // 選択中の区間がない・端に達して動かせないときもキーは素通ししない。初期値の⌘ + ←はMacのブラウザでは「戻る」のため、
+  // 素通しすると編集画面から離れてしまう
+  // キーを押し続けてずらした分は、元に戻すときに1回で戻せるよう1つの操作にまとめる
+  const nudgeSelectedSegment = (edge: "start" | "end", direction: "left" | "right", isRepeat: boolean) => {
+    if (!isRepeat) nudgeHistoryGroupKeyRef.current = crypto.randomUUID();
+    const wavesurfer = wavesurferRef.current;
+    const activeId = activeSegmentRef.current?.id;
+    const segment = activeId ? segmentsRef.current.find((s) => s.id === activeId) : undefined;
+    if (!wavesurfer || !segment) return;
+    const stepSec = segmentNudgeStepMs / 1000;
+    const delta = direction === "left" ? -stepSec : stepSec;
+    let { startSec, endSec } = segment;
+    if (edge === "start") {
+      startSec = Math.min(Math.max(roundFloatingError(startSec + delta), 0), endSec - MIN_REGION_LENGTH_SEC);
+    } else {
+      endSec = Math.max(
+        Math.min(roundFloatingError(endSec + delta), wavesurfer.getDuration()),
+        startSec + MIN_REGION_LENGTH_SEC,
+      );
+    }
+    if (startSec === segment.startSec && endSec === segment.endSec) return;
+    const error = onUpdateRangeRef.current(segment.id, startSec, endSec, nudgeHistoryGroupKeyRef.current);
+    if (error) onErrorRef.current(error);
+  };
+
   // 選択範囲の下に、その場でラベルを打ち込めるcontentEditableな帯をセットする
   const startLabelingSelection = () => {
     const region = selectionRegionRef.current;
@@ -889,6 +1002,10 @@ export function useWavesurfer(
     togglePlay,
     deleteSelectedSegment,
     deselectSegment,
+    selectAdjacentSegment,
+    editSelectedSegmentLabel,
+    mergeSelectedSegment,
+    nudgeSelectedSegment,
     startLabelingSelection,
   };
 }

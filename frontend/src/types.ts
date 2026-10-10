@@ -18,6 +18,9 @@ export type Segment = {
   source: "manual" | "auto";
 };
 
+// 時間軸上で隣の区間を指す向き(前の区間との結合、次の区間の選択など)
+export type SegmentDirection = "previous" | "next";
+
 // 自動検出(VAD)を実行したとき、既にある区間をどう扱うか
 // - keepManual: 確定済み(manual)の区間は残し、前回の候補(auto)だけを新しい結果で入れ替える。確定済みと重なる候補は追加しない
 // - replaceAll: 確定済みも含めてすべて消し、検出結果だけにする
@@ -44,6 +47,12 @@ export type VadSettings = {
   // Silero VADの引数ではなく、このアプリ独自の後処理(バックエンドのmin_silence_duration_ms_after_vad)。
   // 前後の余白を足したあとの区間同士の間がこれより短ければつなげる。0なら結合しない
   minSilenceAfterVadMs: number;
+};
+
+// 区間の編集操作に関する設定
+export type EditingSettings = {
+  // ショートカットで区間の開始・終了を1回ずらす量(ミリ秒)
+  segmentNudgeStepMs: number;
 };
 
 // 再生中、カーソルが表示範囲を進んでいくときの表示位置の動かし方

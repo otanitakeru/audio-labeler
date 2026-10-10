@@ -408,8 +408,8 @@ export function useWavesurfer(
   segmentIdsRef.current = new Set(segments.map((s) => s.id));
   // ラベル帯をクリックして編集・移動・削除できる状態になっている確定済み区間。同時に1つだけ
   const activeSegmentRef = useRef<{ id: string; element: HTMLElement; deactivate: () => void } | null>(null);
-  // 描画済みの区間ごとに、出どころ(候補/確定)に合わせて配色を切り替える関数
-  const segmentColorUpdatersRef = useRef(new Map<string, (source: Segment["source"]) => void>());
+  // 描画済みの区間ごとに、最新の区間データ(出どころによる配色・位置・ラベル)を反映する関数
+  const segmentUpdatersRef = useRef(new Map<string, (segment: Segment) => void>());
 
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -566,7 +566,7 @@ export function useWavesurfer(
   // 選択中にそのまま文字編集状態にしないのは、Delete等のキーが「区間の削除」か「文字の削除」か曖昧になるため。
   // 波形の中で区間の外側を押すと非アクティブに戻る。
   // RegionsPluginのcontentEditableオプションは常時編集可能にしてしまうため使わず、編集可否はここで切り替える。
-  // 追加・削除された分の差分だけをregionsへ反映し、既存分はそのまま残す。ここで全region作り直す方式にすると、
+  // 追加・削除された分だけregionを作成・削除し、既存分は作り直さず中身の変化だけを反映する。ここで全region作り直す方式にすると、
   // 別の区間の追加/削除/確定のたびに編集中(フォーカス中)のcontentEditableまで壊れて入力中の文字が消えてしまうため
   useEffect(() => {
     const regions = regionsRef.current;
@@ -579,13 +579,13 @@ export function useWavesurfer(
       existingIds.add(region.id);
       if (currentIds.has(region.id)) continue;
       if (activeSegmentRef.current?.id === region.id) activeSegmentRef.current = null;
-      segmentColorUpdatersRef.current.delete(region.id);
+      segmentUpdatersRef.current.delete(region.id);
       region.remove();
     }
 
     for (const segment of segments) {
       if (existingIds.has(segment.id)) {
-        segmentColorUpdatersRef.current.get(segment.id)?.(segment.source);
+        segmentUpdatersRef.current.get(segment.id)?.(segment);
         continue;
       }
       const id = segment.id;
@@ -657,10 +657,16 @@ export function useWavesurfer(
         adjustBar.setActive(true);
         region.setOptions({ color: colors.activeRegion });
       };
-      segmentColorUpdatersRef.current.set(id, (source) => {
-        colors = SEGMENT_COLORS[source];
+      // 区間は作り直さないため、同じIDのまま中身が変わったとき(候補の確定、元に戻す/やり直す)はここで見た目に反映する。
+      // 移動・幅変更・ラベル編集の直後は見た目が既に最新なので、値が変わったときだけ触る
+      segmentUpdatersRef.current.set(id, (latest) => {
+        colors = SEGMENT_COLORS[latest.source];
         setLabelContentColors(content, colors.labelBackground, colors.labelBorder);
         region.setOptions({ color: activeSegmentRef.current?.id === id ? colors.activeRegion : colors.region });
+        if (region.start !== latest.startSec || region.end !== latest.endSec) {
+          region.setOptions({ start: latest.startSec, end: latest.endSec });
+        }
+        if (!content.isContentEditable && content.textContent !== latest.label) content.textContent = latest.label;
       });
       const startEditing = () => {
         content.contentEditable = "true";

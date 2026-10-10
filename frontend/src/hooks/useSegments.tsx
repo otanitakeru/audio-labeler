@@ -19,7 +19,19 @@ type SegmentsState = {
     mode: ExistingSegmentsMode,
     source: Segment["source"],
   ) => SegmentMutationResult;
+  // 区間に対する変更(追加・ラベル編集・位置変更・削除・読み込み・自動検出)を1操作ずつ取り消す/やり直す。
+  // 取り消す/やり直す操作がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
+  undo: () => boolean;
+  redo: () => boolean;
 };
+
+// 区間全体のスナップショットを操作ごとに積む。区間はたかだか数百件程度で、差分管理より単純で取りこぼしがないため
+type SegmentsHistory = { past: Segment[][]; present: Segment[]; future: Segment[][] };
+
+// 長時間の作業でメモリを使い続けないよう、さかのぼれる操作数に上限を設ける
+const MAX_HISTORY_LENGTH = 200;
+
+const EMPTY_HISTORY: SegmentsHistory = { past: [], present: [], future: [] };
 
 // 新規追加・位置変更・インポートのすべてで同じ検証を通す(PLAN.md 7章: 区間の出どころによらず同じバリデーション経路)
 function findRangeError(
@@ -36,14 +48,40 @@ const SegmentsContext = createContext<SegmentsState | null>(null);
 
 export function SegmentsProvider({ children }: { children: ReactNode }) {
   const { uploadId } = useAudioSession();
-  const [segments, setSegments] = useState<Segment[]>([]);
+  const [history, setHistory] = useState<SegmentsHistory>(EMPTY_HISTORY);
+  const segments = history.present;
 
   // 編集画面だけでなくヘッダー(ラベルの読み込み・書き出し)からも使うため、状態をルーターの外側
   // (このProvider)に置いている。そのため新しい音声ファイルが読み込まれたときだけ、
-  // 前のファイルの区間が残らないよう明示的にリセットする
+  // 前のファイルの区間(と、前のファイルに戻ってしまう履歴)が残らないよう明示的にリセットする
   useEffect(() => {
-    setSegments([]);
+    setHistory(EMPTY_HISTORY);
   }, [uploadId]);
+
+  // 区間を変更する操作はすべてここを通し、変更前の状態を履歴に積む(新しい操作をしたらやり直しの履歴は捨てる)
+  function commitSegments(update: (prev: Segment[]) => Segment[]): void {
+    setHistory((h) => ({
+      past: [...h.past, h.present].slice(-MAX_HISTORY_LENGTH),
+      present: update(h.present),
+      future: [],
+    }));
+  }
+
+  function undo(): boolean {
+    if (history.past.length === 0) return false;
+    setHistory((h) => ({
+      past: h.past.slice(0, -1),
+      present: h.past[h.past.length - 1],
+      future: [h.present, ...h.future],
+    }));
+    return true;
+  }
+
+  function redo(): boolean {
+    if (history.future.length === 0) return false;
+    setHistory((h) => ({ past: [...h.past, h.present], present: h.future[0], future: h.future.slice(1) }));
+    return true;
+  }
 
   function validateNewSegment(startSec: number, endSec: number): string | null {
     return findRangeError(startSec, endSec, segments);
@@ -52,14 +90,14 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
   function addSegment(startSec: number, endSec: number, label: string): SegmentMutationResult {
     const error = validateNewSegment(startSec, endSec);
     if (error) return { success: false, error };
-    setSegments((prev) => [...prev, { id: crypto.randomUUID(), startSec, endSec, label, source: "manual" }]);
+    commitSegments((prev) => [...prev, { id: crypto.randomUUID(), startSec, endSec, label, source: "manual" }]);
     return { success: true };
   }
 
   // 区間(startSec/endSec)は変えずラベル文言のみ更新するため、他区間との重なりは再検証不要。
   // 自動検出の候補(auto)は、人がラベルを入力した時点で確認済みとみなし確定(manual)にする(PLAN.md 5章)
   function updateSegmentLabel(id: string, label: string): void {
-    setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, label, source: "manual" } : s)));
+    commitSegments((prev) => prev.map((s) => (s.id === id ? { ...s, label, source: "manual" } : s)));
   }
 
   // ラベルトラック上でのドラッグによる区間の移動・リサイズを確定する。addSegmentと同じ
@@ -72,12 +110,12 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
       segments.filter((s) => s.id !== id),
     );
     if (error) return { success: false, error };
-    setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, startSec, endSec, source: "manual" } : s)));
+    commitSegments((prev) => prev.map((s) => (s.id === id ? { ...s, startSec, endSec, source: "manual" } : s)));
     return { success: true };
   }
 
   function removeSegment(id: string): void {
-    setSegments((prev) => prev.filter((s) => s.id !== id));
+    commitSegments((prev) => prev.filter((s) => s.id !== id));
   }
 
   // 全区間を入れ替える(ラベルファイルのインポート、自動検出のreplaceAll)。
@@ -90,7 +128,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
       const error = findRangeError(startSec, endSec, i > 0 ? [sorted[i - 1]] : []);
       if (error) return { success: false, error: `${startSec}〜${endSec}秒の区間: ${error}` };
     }
-    setSegments(sorted.map((r) => ({ ...r, id: crypto.randomUUID(), source })));
+    commitSegments(() => sorted.map((r) => ({ ...r, id: crypto.randomUUID(), source })));
     return { success: true };
   }
 
@@ -111,7 +149,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
       if (findRangeError(candidate.startSec, candidate.endSec, [...kept, ...accepted])) continue;
       accepted.push({ ...candidate, id: crypto.randomUUID(), source });
     }
-    setSegments([...kept, ...accepted]);
+    commitSegments(() => [...kept, ...accepted]);
     return { success: true };
   }
 
@@ -126,6 +164,8 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
         removeSegment,
         replaceSegments,
         applyDetectedSegments,
+        undo,
+        redo,
       }}
     >
       {children}

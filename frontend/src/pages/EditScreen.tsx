@@ -29,8 +29,16 @@ function EditScreen() {
   const navigate = useNavigate();
   const waveformContainerRef = useRef<HTMLDivElement>(null);
   const amplitudeAxisRef = useRef<HTMLDivElement>(null);
-  const { segments, validateNewSegment, addSegment, updateSegmentLabel, updateSegmentRange, removeSegment } =
-    useSegments();
+  const {
+    segments,
+    validateNewSegment,
+    addSegment,
+    updateSegmentLabel,
+    updateSegmentRange,
+    removeSegment,
+    undo,
+    redo,
+  } = useSegments();
   const { mainWaveformHeight, minimapHeight, playbackScrollMode } = useDisplaySettings();
   const [error, setError] = useState<string | null>(null);
   const { isDetecting, requestDetection, isConfirmingReplaceAll, confirmReplaceAll, cancelReplaceAll } =
@@ -79,6 +87,8 @@ function EditScreen() {
     labelSelection: startLabelingSelection,
     deleteSelectedSegment,
     deselectSegment,
+    undo,
+    redo,
   });
 
   if (!uploadId) return null;

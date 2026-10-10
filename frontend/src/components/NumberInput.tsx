@@ -4,13 +4,16 @@ type NumberInputProps = {
   unit?: string;
   min: number;
   max: number;
+  // 省略時は1刻み(ブラウザ標準)
+  step?: number;
+  disabled?: boolean;
   value: number;
   onChange: (value: number) => void;
 };
 
 // 入力のたびに範囲内へ丸めると、300と打つ途中の「3」が最小値に置き換わって打てなくなるため、
 // 入力中は文字列のまま持ち、フォーカスが外れたときに範囲内へ丸めて確定する
-function NumberInput({ unit, min, max, value, onChange }: NumberInputProps) {
+function NumberInput({ unit, min, max, step, disabled, value, onChange }: NumberInputProps) {
   // nullは入力中でないことを表す(親から渡された値をそのまま表示する)
   const [editingText, setEditingText] = useState<string | null>(null);
 
@@ -30,10 +33,12 @@ function NumberInput({ unit, min, max, value, onChange }: NumberInputProps) {
         type="number"
         min={min}
         max={max}
+        step={step}
+        disabled={disabled}
         value={editingText ?? value}
         onChange={(e) => setEditingText(e.target.value)}
         onBlur={commit}
-        className="w-24 rounded-md border border-gray-300 bg-white px-2 py-2"
+        className="w-24 rounded-md border border-gray-300 bg-white px-2 py-2 disabled:bg-gray-100 disabled:text-gray-400"
       />
       {unit}
     </label>

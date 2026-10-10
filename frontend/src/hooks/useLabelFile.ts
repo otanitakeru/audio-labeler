@@ -2,6 +2,7 @@ import { useState } from "react";
 import { LabelFormatError, parseLabels, serializeLabels, type LabeledRange } from "../formats/labelFormat";
 import { useAudioSession } from "./useAudioSession";
 import { useSegments } from "./useSegments";
+import { useVadSettings } from "./useVadSettings";
 
 type LabelFileState = {
   error: string | null;
@@ -27,6 +28,8 @@ declare global {
 export function useLabelFile(): LabelFileState {
   const { filename } = useAudioSession();
   const { segments, replaceSegments } = useSegments();
+  const { vadSettings } = useVadSettings();
+  const exportableSegments = vadSettings.exportCandidates ? segments : segments.filter((s) => s.source === "manual");
   const [error, setError] = useState<string | null>(null);
   // 既存のラベルを置き換えてよいか確認している間、読み込んだ区間をここに控えておく
   const [pendingRanges, setPendingRanges] = useState<LabeledRange[] | null>(null);
@@ -63,7 +66,7 @@ export function useLabelFile(): LabelFileState {
 
   // 保存場所を選べるChrome/Edgeでは保存ダイアログを出し、それ以外のブラウザではダウンロードフォルダに保存する
   const exportLabelFile = async (): Promise<void> => {
-    const text = serializeLabels(segments);
+    const text = serializeLabels(exportableSegments);
     const suggestedName = `${(filename ?? "labels").replace(/\.wav$/i, "")}.txt`;
 
     if (window.showSaveFilePicker) {
@@ -94,7 +97,7 @@ export function useLabelFile(): LabelFileState {
 
   return {
     error,
-    canExport: segments.length > 0,
+    canExport: exportableSegments.length > 0,
     importLabelFile,
     exportLabelFile,
     clearError: () => setError(null),

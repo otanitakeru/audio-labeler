@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getAudioStreamUrl } from "../api/audioApi";
 import AlertDialog from "../components/AlertDialog";
+import Button from "../components/Button";
+import ConfirmDialog from "../components/ConfirmDialog";
 import TransportControls from "../components/TransportControls";
 import Waveform from "../components/Waveform";
 import { useAudioSession } from "../hooks/useAudioSession";
 import { useDisplaySettings } from "../hooks/useDisplaySettings";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useSegments } from "../hooks/useSegments";
+import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useWavesurfer } from "../hooks/useWavesurfer";
 
 function EditScreen() {
@@ -19,6 +22,8 @@ function EditScreen() {
     useSegments();
   const { mainWaveformHeight, minimapHeight } = useDisplaySettings();
   const [error, setError] = useState<string | null>(null);
+  const { isDetecting, requestDetection, isConfirmingReplaceAll, confirmReplaceAll, cancelReplaceAll } =
+    useSpeechDetection(setError);
 
   useEffect(() => {
     if (!uploadId) navigate("/", { replace: true });
@@ -71,14 +76,19 @@ function EditScreen() {
         {channelCount > 1 && <span className="text-gray-500">ch {channel}</span>}
       </div>
 
-      {/* 読み込み中も表示しておき(操作のみ無効化)、読み込み完了時に波形の位置がずれないようにする */}
-      <TransportControls
-        disabled={!isReady}
-        isPlaying={isPlaying}
-        currentTime={currentTime}
-        duration={duration}
-        onTogglePlay={togglePlay}
-      />
+      <div className="flex items-center justify-between gap-3">
+        {/* 読み込み中も表示しておき(操作のみ無効化)、読み込み完了時に波形の位置がずれないようにする */}
+        <TransportControls
+          disabled={!isReady}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          duration={duration}
+          onTogglePlay={togglePlay}
+        />
+        <Button variant="secondary" onClick={requestDetection} disabled={!isReady || isDetecting}>
+          {isDetecting ? "検出中..." : "自動検出"}
+        </Button>
+      </div>
 
       <div className="relative">
         <Waveform
@@ -103,6 +113,14 @@ function EditScreen() {
       </div>
 
       <AlertDialog message={error} onClose={() => setError(null)} />
+      <ConfirmDialog
+        open={isConfirmingReplaceAll}
+        title="自動検出"
+        message="確定済みのラベルも消して、検出結果で置き換えますか?"
+        confirmLabel="置き換える"
+        onConfirm={confirmReplaceAll}
+        onCancel={cancelReplaceAll}
+      />
     </div>
   );
 }

@@ -21,10 +21,31 @@ const WHEEL_ZOOM_FACTOR = 1.1;
 const MIN_REGION_LENGTH_SEC = 0.01;
 
 const SELECTION_REGION_COLOR = "rgba(234, 88, 12, 0.15)";
-const SEGMENT_REGION_COLOR = "rgba(37, 99, 235, 0.12)";
-const ACTIVE_SEGMENT_REGION_COLOR = "rgba(37, 99, 235, 0.25)";
-// 全体波形上に重ねる確定済み区間の色。全体波形は縦幅が小さく薄い色だと見えにくいため、メイン波形より濃くする
-const MINIMAP_SEGMENT_COLOR = "rgba(37, 99, 235, 0.3)";
+type SegmentColors = {
+  region: string;
+  activeRegion: string;
+  labelBackground: string;
+  labelBorder: string;
+  // 全体波形上に重ねる色。全体波形は縦幅が小さく薄い色だと見えにくいため、メイン波形より濃くする
+  minimap: string;
+};
+// 区間の出どころごとの配色。自動検出の候補(auto)は、人が確認した確定済み(manual)と見分けられるよう灰色にする
+const SEGMENT_COLORS: Record<Segment["source"], SegmentColors> = {
+  manual: {
+    region: "rgba(37, 99, 235, 0.12)",
+    activeRegion: "rgba(37, 99, 235, 0.25)",
+    labelBackground: "rgba(239, 246, 255, 0.95)",
+    labelBorder: "#2563eb",
+    minimap: "rgba(37, 99, 235, 0.3)",
+  },
+  auto: {
+    region: "rgba(107, 114, 128, 0.12)",
+    activeRegion: "rgba(107, 114, 128, 0.25)",
+    labelBackground: "rgba(243, 244, 246, 0.95)",
+    labelBorder: "#6b7280",
+    minimap: "rgba(107, 114, 128, 0.35)",
+  },
+};
 // ラベル文言を表示・編集する帯の高さ(px)。「波形の下側にラベルを書く」という見た目にするため、
 // 区間(Region)自体は波形+ラベル領域の全高を使いつつ、テキストはこの帯にだけ配置する
 const LABEL_BAR_HEIGHT_PX = 40;
@@ -88,8 +109,6 @@ function createLabelContent(initialText: string, background: string, borderColor
     "font-size:14px",
     "line-height:1",
     "color:#111827",
-    `background:${background}`,
-    `border-top:1px solid ${borderColor}`,
     "white-space:nowrap",
     "overflow:hidden",
     "text-overflow:ellipsis",
@@ -97,14 +116,21 @@ function createLabelContent(initialText: string, background: string, borderColor
     "cursor:text",
     "box-sizing:border-box",
   ].join(";");
+  setLabelContentColors(el, background, borderColor);
   el.addEventListener("focus", () => {
-    el.style.outline = `2px solid ${borderColor}`;
+    // 候補が確定に変わると色が変わるため、作成時ではなくその時点の枠線色を使う
+    el.style.outline = `2px solid ${el.style.borderTopColor}`;
     el.style.outlineOffset = "-2px";
   });
   el.addEventListener("blur", () => {
     el.style.outline = "none";
   });
   return el;
+}
+
+function setLabelContentColors(el: HTMLElement, background: string, borderColor: string): void {
+  el.style.background = background;
+  el.style.borderTop = `1px solid ${borderColor}`;
 }
 
 type AdjustMode = "move" | "start" | "end";
@@ -372,6 +398,8 @@ export function useWavesurfer(
   segmentIdsRef.current = new Set(segments.map((s) => s.id));
   // ラベル帯をクリックして編集・移動・削除できる状態になっている確定済み区間。同時に1つだけ
   const activeSegmentRef = useRef<{ id: string; element: HTMLElement; deactivate: () => void } | null>(null);
+  // 描画済みの区間ごとに、出どころ(候補/確定)に合わせて配色を切り替える関数
+  const segmentColorUpdatersRef = useRef(new Map<string, (source: Segment["source"]) => void>());
 
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -540,22 +568,28 @@ export function useWavesurfer(
       existingIds.add(region.id);
       if (currentIds.has(region.id)) continue;
       if (activeSegmentRef.current?.id === region.id) activeSegmentRef.current = null;
+      segmentColorUpdatersRef.current.delete(region.id);
       region.remove();
     }
 
     for (const segment of segments) {
-      if (existingIds.has(segment.id)) continue;
+      if (existingIds.has(segment.id)) {
+        segmentColorUpdatersRef.current.get(segment.id)?.(segment.source);
+        continue;
+      }
       const id = segment.id;
       // 区間は作り直さないため、ラベルの比較・復元には生成時点ではなく常に最新の値を使う
       const getCurrentLabel = () => segmentsRef.current.find((s) => s.id === id)?.label ?? "";
 
-      const content = createLabelContent(segment.label, "rgba(239, 246, 255, 0.95)", "#2563eb");
+      // 候補(auto)がラベル入力・位置調整で確定(manual)に変わったときは、区間を作り直さず配色だけ切り替える
+      let colors = SEGMENT_COLORS[segment.source];
+      const content = createLabelContent(segment.label, colors.labelBackground, colors.labelBorder);
       content.style.cursor = "pointer";
       const region = regions.addRegion({
         id,
         start: segment.startSec,
         end: segment.endSec,
-        color: SEGMENT_REGION_COLOR,
+        color: colors.region,
         content,
         drag: false,
         resize: false,
@@ -604,14 +638,19 @@ export function useWavesurfer(
         activeSegmentRef.current = null;
         content.blur();
         adjustBar.setActive(false);
-        region.setOptions({ color: SEGMENT_REGION_COLOR });
+        region.setOptions({ color: colors.region });
       };
       const activate = () => {
         activeSegmentRef.current?.deactivate();
         activeSegmentRef.current = { id, element, deactivate };
         adjustBar.setActive(true);
-        region.setOptions({ color: ACTIVE_SEGMENT_REGION_COLOR });
+        region.setOptions({ color: colors.activeRegion });
       };
+      segmentColorUpdatersRef.current.set(id, (source) => {
+        colors = SEGMENT_COLORS[source];
+        setLabelContentColors(content, colors.labelBackground, colors.labelBorder);
+        region.setOptions({ color: activeSegmentRef.current?.id === id ? colors.activeRegion : colors.region });
+      });
       const startEditing = () => {
         content.contentEditable = "true";
         content.style.cursor = "text";
@@ -668,7 +707,7 @@ export function useWavesurfer(
           "bottom:0",
           `left:${(segment.startSec / duration) * 100}%`,
           `width:${((segment.endSec - segment.startSec) / duration) * 100}%`,
-          `background:${MINIMAP_SEGMENT_COLOR}`,
+          `background:${SEGMENT_COLORS[segment.source].minimap}`,
         ].join(";");
         return bar;
       }),

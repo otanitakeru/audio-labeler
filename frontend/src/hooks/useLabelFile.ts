@@ -27,7 +27,7 @@ declare global {
 
 export function useLabelFile(): LabelFileState {
   const { filename } = useAudioSession();
-  const { segments, replaceSegments } = useSegments();
+  const { segments, replaceSegments, markSegmentsSaved } = useSegments();
   const { vadSettings } = useVadSettings();
   const exportableSegments = vadSettings.exportCandidates ? segments : segments.filter((s) => s.source === "manual");
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +36,11 @@ export function useLabelFile(): LabelFileState {
 
   const applyRanges = (ranges: LabeledRange[]) => {
     const result = replaceSegments(ranges);
-    if (!result.success) setError(`ラベルを読み込めませんでした。${result.error}`);
+    if (!result.success) {
+      setError(`ラベルを読み込めませんでした。${result.error}`);
+      return;
+    }
+    markSegmentsSaved();
   };
 
   // 壊れたファイルで置き換えの確認を出さないよう、形式の検証を先に行ってから確認する
@@ -84,6 +88,7 @@ export function useLabelFile(): LabelFileState {
       const writable = await handle.createWritable();
       await writable.write(text);
       await writable.close();
+      markSegmentsSaved();
       return;
     }
 
@@ -93,6 +98,7 @@ export function useLabelFile(): LabelFileState {
     link.download = suggestedName;
     link.click();
     URL.revokeObjectURL(url);
+    markSegmentsSaved();
   };
 
   return {

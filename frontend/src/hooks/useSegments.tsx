@@ -26,16 +26,34 @@ type SegmentsState = {
   // 取り消す/やり直す操作がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   undo: () => boolean;
   redo: () => boolean;
+  // 最後に書き出した(または読み込んだ)ときから区間が変わっているか。リロード・タブを閉じるときの確認に使う
+  hasUnsavedChanges: boolean;
+  // 現在の区間をファイルと一致した状態として記録する。ラベルの書き出し・読み込みの後に呼ぶ
+  markSegmentsSaved: () => void;
 };
 
 // 区間全体のスナップショットを操作ごとに積む。区間はたかだか数百件程度で、差分管理より単純で取りこぼしがないため
-// lastGroupKeyは直前の変更が属するまとまり(historyGroupKey)。別の操作・元に戻す/やり直すで途切れる
-type SegmentsHistory = { past: Segment[][]; present: Segment[]; future: Segment[][]; lastGroupKey: string | null };
+// lastGroupKeyは直前の変更が属するまとまり(historyGroupKey)。別の操作・元に戻す/やり直すで途切れる。
+// savedはファイルと一致している時点のスナップショット。参照で比較するため、元に戻すで書き出し時点に戻れば未保存ではなくなる
+type SegmentsHistory = {
+  past: Segment[][];
+  present: Segment[];
+  future: Segment[][];
+  lastGroupKey: string | null;
+  saved: Segment[];
+};
 
 // 長時間の作業でメモリを使い続けないよう、さかのぼれる操作数に上限を設ける
 const MAX_HISTORY_LENGTH = 200;
 
-const EMPTY_HISTORY: SegmentsHistory = { past: [], present: [], future: [], lastGroupKey: null };
+const NO_SEGMENTS: Segment[] = [];
+const EMPTY_HISTORY: SegmentsHistory = {
+  past: [],
+  present: NO_SEGMENTS,
+  future: [],
+  lastGroupKey: null,
+  saved: NO_SEGMENTS,
+};
 
 // 新規追加・位置変更・インポートのすべてで同じ検証を通す(PLAN.md 7章: 区間の出どころによらず同じバリデーション経路)
 function findRangeError(
@@ -77,6 +95,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
     setHistory((h) => {
       const continuesGroup = groupKey !== undefined && groupKey === h.lastGroupKey;
       return {
+        ...h,
         past: continuesGroup ? h.past : [...h.past, h.present].slice(-MAX_HISTORY_LENGTH),
         present: update(h.present),
         future: [],
@@ -88,6 +107,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
   function undo(): boolean {
     if (history.past.length === 0) return false;
     setHistory((h) => ({
+      ...h,
       past: h.past.slice(0, -1),
       present: h.past[h.past.length - 1],
       future: [h.present, ...h.future],
@@ -99,6 +119,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
   function redo(): boolean {
     if (history.future.length === 0) return false;
     setHistory((h) => ({
+      ...h,
       past: [...h.past, h.present],
       present: h.future[0],
       future: h.future.slice(1),
@@ -203,6 +224,11 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
     return { success: true };
   }
 
+  // 直前に積まれた変更(読み込み直後の置き換えなど)の後の状態を記録するため、関数形式で更新する
+  function markSegmentsSaved(): void {
+    setHistory((h) => ({ ...h, saved: h.present }));
+  }
+
   return (
     <SegmentsContext.Provider
       value={{
@@ -217,6 +243,8 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
         applyDetectedSegments,
         undo,
         redo,
+        hasUnsavedChanges: history.present !== history.saved,
+        markSegmentsSaved,
       }}
     >
       {children}

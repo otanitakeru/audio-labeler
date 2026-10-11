@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import UPLOAD_DIR
-from app.routers import audio, vad
+from app.routers import audio, transcription, vad
 
 
 @asynccontextmanager
@@ -28,6 +28,7 @@ app.add_middleware(
 
 app.include_router(audio.router)
 app.include_router(vad.router)
+app.include_router(transcription.router)
 
 
 @app.get("/api/health")

@@ -24,10 +24,14 @@ function isModalDialogOpen(): boolean {
 // その画面で有効なショートカットキーを登録する。キー割り当て自体はuseShortcutBindings側で
 // カスタマイズ可能なため、ここでは常に現在の割り当てを引いて照合する。
 // テキスト入力中(ラベル入力欄など)は誤発火を避けるため無視する。
-export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
+// blockedの間(文字起こし中など、編集を止めているとき)は、割り当てたキーを受け取っても何もしない。
+// 素通しにしないのは、⌘ + ← などがブラウザの「戻る」になり編集画面から離れてしまうため
+export function useKeyboardShortcuts(handlers: ShortcutHandlers, blocked = false): void {
   const { getBinding } = useShortcutBindings();
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
+  const blockedRef = useRef(blocked);
+  blockedRef.current = blocked;
   const getBindingRef = useRef(getBinding);
   getBindingRef.current = getBinding;
 
@@ -38,7 +42,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
       for (const [id, handler] of Object.entries(handlersRef.current) as [ShortcutId, ShortcutHandler | undefined][]) {
         if (!handler) continue;
         if (isSameKeyCombo(getBindingRef.current(id), pressed)) {
-          if (handler(e) === false) return;
+          if (!blockedRef.current && handler(e) === false) return;
           e.preventDefault();
           return;
         }

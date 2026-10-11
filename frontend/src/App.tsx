@@ -8,6 +8,8 @@ import { DisplaySettingsProvider } from "./hooks/useDisplaySettings";
 import { EditingSettingsProvider } from "./hooks/useEditingSettings";
 import { SegmentsProvider } from "./hooks/useSegments";
 import { ShortcutBindingsProvider } from "./hooks/useShortcutBindings";
+import { TranscriptionProvider } from "./hooks/useTranscription";
+import { TranscriptionSettingsProvider } from "./hooks/useTranscriptionSettings";
 import { useUnsavedChangesWarning } from "./hooks/useUnsavedChangesWarning";
 import { VadSettingsProvider } from "./hooks/useVadSettings";
 import EditScreen from "./pages/EditScreen";
@@ -56,11 +58,15 @@ function App() {
         <DisplaySettingsProvider>
           <ShortcutBindingsProvider>
             <VadSettingsProvider>
-              <EditingSettingsProvider>
-                <Router>
-                  <AppLayout />
-                </Router>
-              </EditingSettingsProvider>
+              <TranscriptionSettingsProvider>
+                <TranscriptionProvider>
+                  <EditingSettingsProvider>
+                    <Router>
+                      <AppLayout />
+                    </Router>
+                  </EditingSettingsProvider>
+                </TranscriptionProvider>
+              </TranscriptionSettingsProvider>
             </VadSettingsProvider>
           </ShortcutBindingsProvider>
         </DisplaySettingsProvider>

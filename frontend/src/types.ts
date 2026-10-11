@@ -14,7 +14,8 @@ export type Segment = {
   startSec: number;
   endSec: number;
   label: string;
-  // 将来のVAD/Whisperによる自動検出区間と手動区間を同じ型・同じバリデーションで扱うためのフィールド
+  // VADによる自動検出区間と手動区間を同じ型・同じバリデーションで扱うためのフィールド。
+  // 文字起こし(Whisper)はラベルを埋めるだけで、sourceは変えない
   source: "manual" | "auto";
 };
 
@@ -47,6 +48,20 @@ export type VadSettings = {
   // Silero VADの引数ではなく、このアプリ独自の後処理(バックエンドのmin_silence_duration_ms_after_vad)。
   // 前後の余白を足したあとの区間同士の間がこれより短ければつなげる。0なら結合しない
   minSilenceAfterVadMs: number;
+};
+
+// 文字起こしの対象にする区間
+// - unlabeledOrCandidates: ラベルが空の区間と候補(auto)。確定済みでラベルがある区間は人が書いた文言なので上書きしない
+// - all: すべての区間。ラベルがある区間も書き直す(モデルを変えてやり直すときなど)
+export type TranscriptionTargetMode = "unlabeledOrCandidates" | "all";
+
+// 文字起こし(Whisper)の設定
+export type TranscriptionSettings = {
+  targetMode: TranscriptionTargetMode;
+  // Hugging Face のモデルID(例: openai/whisper-large-v3-turbo)
+  modelId: string;
+  // Whisperの言語コード(例: ja)。nullのときは区間ごとに自動判定する
+  language: string | null;
 };
 
 // 区間の編集操作に関する設定

@@ -49,3 +49,47 @@ class DetectSpeechRequest(BaseModel):
 class DetectedSpeechSegment(BaseModel):
     start_sec: float
     end_sec: float
+
+
+class TranscriptionRange(BaseModel):
+    start_sec: float = Field(ge=0)
+    end_sec: float
+
+    @model_validator(mode="after")
+    def check_range(self) -> "TranscriptionRange":
+        if self.end_sec <= self.start_sec:
+            raise ValueError("end_sec must be greater than start_sec")
+        return self
+
+
+class TranscribeRequest(BaseModel):
+    channel: int = Field(ge=0)
+    # Hugging Face のモデルID(例: openai/whisper-large-v3-turbo)
+    model_id: str = Field(min_length=1)
+    # Whisperの言語コード(例: ja)。Noneのときは区間ごとに自動判定する
+    language: str | None = Field(min_length=1)
+    ranges: list[TranscriptionRange]
+
+
+# 文字起こしの進み具合は1行ずつ返す(NDJSON)。各行は次のいずれかで、typeで見分ける
+class TranscriptionReady(BaseModel):
+    """モデルの読み込み(初回はダウンロードも)が終わり、区間の文字起こしを始めた"""
+
+    type: Literal["ready"] = "ready"
+
+
+class TranscribedText(BaseModel):
+    """1区間の文字起こしが終わった"""
+
+    type: Literal["result"] = "result"
+    # リクエストのrangesの何番目の区間か
+    index: int
+    text: str
+
+
+class TranscriptionFailure(BaseModel):
+    """途中で失敗した。これを返したら、以降の区間は処理しない"""
+
+    type: Literal["error"] = "error"
+    # 利用者向けの文言
+    error: str

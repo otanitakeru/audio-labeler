@@ -14,25 +14,18 @@ export type Segment = {
   startSec: number;
   endSec: number;
   label: string;
-  // VADによる自動検出区間と手動区間を同じ型・同じバリデーションで扱うためのフィールド。
-  // 文字起こし(Whisper)はラベルを埋めるだけで、sourceは変えない
-  source: "manual" | "auto";
 };
 
 // 時間軸上で隣の区間を指す向き(前の区間との結合、次の区間の選択など)
 export type SegmentDirection = "previous" | "next";
 
 // 自動検出(VAD)を実行したとき、既にある区間をどう扱うか
-// - keepManual: 確定済み(manual)の区間は残し、前回の候補(auto)だけを新しい結果で入れ替える。確定済みと重なる候補は追加しない
-// - replaceAll: 確定済みも含めてすべて消し、検出結果だけにする
-export type ExistingSegmentsMode = "keepManual" | "replaceAll";
+// - replaceAll: すべて消し、検出結果だけにする
+// - keepExisting: 既にある区間は残し、検出結果のうち重ならない区間だけを足す
+export type ExistingSegmentsMode = "replaceAll" | "keepExisting";
 
 export type VadSettings = {
   existingSegmentsMode: ExistingSegmentsMode;
-  // 検出した区間を、候補(auto)ではなく最初から確定(manual)として追加するか
-  addDetectedAsConfirmed: boolean;
-  // ラベルの書き出しに、まだ確定していない候補(auto)も含めるか
-  exportCandidates: boolean;
   // 以下はSilero VADの検出パラメータ(バックエンドのVadParams、silero_vad.get_speech_timestampsの引数と対応)
   samplingRate: 8000 | 16000;
   threshold: number;
@@ -51,9 +44,9 @@ export type VadSettings = {
 };
 
 // 文字起こしの対象にする区間
-// - unlabeledOrCandidates: ラベルが空の区間と候補(auto)。確定済みでラベルがある区間は人が書いた文言なので上書きしない
+// - unlabeled: ラベルが空の区間。ラベルがある区間は人が書いた(または確認した)文言なので上書きしない
 // - all: すべての区間。ラベルがある区間も書き直す(モデルを変えてやり直すときなど)
-export type TranscriptionTargetMode = "unlabeledOrCandidates" | "all";
+export type TranscriptionTargetMode = "unlabeled" | "all";
 
 // 文字起こし(Whisper)の設定
 export type TranscriptionSettings = {

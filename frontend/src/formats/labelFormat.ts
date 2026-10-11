@@ -1,6 +1,6 @@
 import type { Segment } from "../types";
 
-// ファイルに書かれる情報だけを持つ区間。id/sourceはアプリ内の状態でのみ使うため含めない
+// ファイルに書かれる情報だけを持つ区間。idはアプリ内の状態でのみ使うため含めない
 export type LabeledRange = Pick<Segment, "startSec" | "endSec" | "label">;
 
 export class LabelFormatError extends Error {}

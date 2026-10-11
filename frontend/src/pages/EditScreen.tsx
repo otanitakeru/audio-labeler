@@ -16,6 +16,11 @@ import { useSegments } from "../hooks/useSegments";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useTranscription } from "../hooks/useTranscription";
 import { useWavesurfer } from "../hooks/useWavesurfer";
+import type { Segment } from "../types";
+
+// 自動検出・文字起こし中でないときに渡す空の途中経過。描き直しのeffectが毎回走らないよう、同じものを使い回す
+const NO_RANGES: Pick<Segment, "startSec" | "endSec">[] = [];
+const NO_SEGMENT_IDS: ReadonlySet<string> = new Set();
 
 function EditScreen() {
   const {
@@ -46,23 +51,36 @@ function EditScreen() {
   const { mainWaveformHeight, minimapHeight, playbackScrollMode } = useDisplaySettings();
   const { editingSettings } = useEditingSettings();
   const [error, setError] = useState<string | null>(null);
-  const { isDetecting, requestDetection, isConfirmingReplaceAll, confirmReplaceAll, cancelReplaceAll } =
-    useSpeechDetection(setError);
+  const {
+    progress: detectionProgress,
+    requestDetection,
+    isConfirmingReplaceAll,
+    confirmReplaceAll,
+    cancelReplaceAll,
+    requestStop: requestDetectionStop,
+    isConfirmingStop: isConfirmingDetectionStop,
+    confirmStop: confirmDetectionStop,
+    dismissStop: dismissDetectionStop,
+    error: detectionError,
+    clearError: clearDetectionError,
+  } = useSpeechDetection();
   const {
     progress: transcriptionProgress,
     requestTranscription,
     isConfirmingOverwrite,
     confirmOverwrite,
     cancelOverwrite,
-    requestStop,
-    isConfirmingStop,
-    confirmStop,
-    dismissStop,
+    requestStop: requestTranscriptionStop,
+    isConfirmingStop: isConfirmingTranscriptionStop,
+    confirmStop: confirmTranscriptionStop,
+    dismissStop: dismissTranscriptionStop,
     error: transcriptionError,
     clearError: clearTranscriptionError,
   } = useTranscription();
-  // 文字起こし中は結果を区間に入れていくため、編集・再生を止める。表示位置の移動(スクロール・拡大縮小)だけはできる(PLAN.md 5章)
+  const isDetecting = detectionProgress !== null;
   const isTranscribing = transcriptionProgress !== null;
+  // 自動検出・文字起こし中は結果を区間に入れるため、編集・再生を止める。表示位置の移動(スクロール・拡大縮小)だけはできる(PLAN.md 5章)
+  const isEditingLocked = isDetecting || isTranscribing;
 
   useEffect(() => {
     if (!uploadId) navigate("/", { replace: true });
@@ -106,8 +124,10 @@ function EditScreen() {
     playbackScrollMode,
     segmentNudgeStepMs: editingSettings.segmentNudgeStepMs,
     amplitudeAxisRef,
-    editingLocked: isTranscribing,
+    editingLocked: isEditingLocked,
     highlightedSegmentId: transcriptionProgress?.currentSegmentId ?? null,
+    processedSegmentIds: transcriptionProgress?.processedSegmentIds ?? NO_SEGMENT_IDS,
+    detectionPreviewRanges: detectionProgress?.speechRanges ?? NO_RANGES,
   });
 
   useKeyboardShortcuts(
@@ -128,8 +148,13 @@ function EditScreen() {
       nudgeSegmentEndLeft: (e) => nudgeSelectedSegment("end", "left", e.repeat),
       nudgeSegmentEndRight: (e) => nudgeSelectedSegment("end", "right", e.repeat),
     },
-    isTranscribing,
+    isEditingLocked,
   );
+
+  // 実行中は再生ボタン・ショートカットを止めていて再生を止められないため、始める前に止めておく
+  const stopPlayback = () => {
+    if (isPlaying) togglePlay();
+  };
 
   if (!uploadId) return null;
 
@@ -143,20 +168,32 @@ function EditScreen() {
       <div className="flex items-center justify-between gap-3">
         {/* 読み込み中も表示しておき(操作のみ無効化)、読み込み完了時に波形の位置がずれないようにする */}
         <TransportControls
-          disabled={!isReady || isUploading || isTranscribing}
+          disabled={!isReady || isUploading || isEditingLocked}
           isPlaying={isPlaying}
           currentTime={currentTime}
           duration={duration}
           onTogglePlay={togglePlay}
         />
         <div className="flex items-center gap-3">
-          <Button
-            variant="secondary"
-            onClick={requestDetection}
-            disabled={!isReady || isUploading || isDetecting || isTranscribing}
-          >
-            {isDetecting ? "検出中..." : "自動検出"}
-          </Button>
+          {detectionProgress ? (
+            <ProgressButton
+              label={detectionProgress.phase === "preparing" ? "前処理中" : "処理中"}
+              hoverLabel="中止"
+              ratio={detectionProgress.phase === "preparing" ? null : detectionProgress.percent / 100}
+              onClick={requestDetectionStop}
+            />
+          ) : (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                stopPlayback();
+                requestDetection();
+              }}
+              disabled={!isReady || isUploading || isTranscribing}
+            >
+              自動検出
+            </Button>
+          )}
           {transcriptionProgress ? (
             <ProgressButton
               label={transcriptionProgress.phase === "loadingModel" ? "モデル読み込み中" : "処理中"}
@@ -166,14 +203,13 @@ function EditScreen() {
                   ? null
                   : transcriptionProgress.done / transcriptionProgress.total
               }
-              onClick={requestStop}
+              onClick={requestTranscriptionStop}
             />
           ) : (
             <Button
               variant="secondary"
               onClick={() => {
-                // 文字起こし中は再生ボタン・ショートカットを止めていて再生を止められないため、先に止めておく
-                if (isPlaying) togglePlay();
+                stopPlayback();
                 requestTranscription();
               }}
               disabled={!isReady || isUploading || isDetecting}
@@ -188,6 +224,7 @@ function EditScreen() {
         <Waveform
           containerRef={waveformContainerRef}
           amplitudeAxisRef={amplitudeAxisRef}
+          isProcessing={isEditingLocked}
           peakAmplitude={visiblePeakAmplitude}
           mainWaveformHeight={mainWaveformHeight}
           minimapHeight={minimapHeight}
@@ -211,32 +248,41 @@ function EditScreen() {
       </div>
 
       <AlertDialog message={error} onClose={() => setError(null)} />
+      <AlertDialog message={detectionError} onClose={clearDetectionError} />
       <AlertDialog message={transcriptionError} onClose={clearTranscriptionError} />
       {/* ヘッダーから読み込んだ音声のエラー。ホーム画面では入力欄の下に出しているが、編集画面には表示する場所がないためダイアログで出す */}
       <AlertDialog message={uploadError} onClose={clearUploadError} />
       <ConfirmDialog
         open={isConfirmingReplaceAll}
         title="自動検出"
-        message="確定済みのラベルも消して、検出結果で置き換えますか?"
+        message="今の区間をすべて消して、検出結果で置き換えますか?"
         confirmLabel="置き換える"
         onConfirm={confirmReplaceAll}
         onCancel={cancelReplaceAll}
       />
       <ConfirmDialog
+        open={isConfirmingDetectionStop}
+        title="自動検出"
+        message="中止しますか?"
+        confirmLabel="中止する"
+        onConfirm={confirmDetectionStop}
+        onCancel={dismissDetectionStop}
+      />
+      <ConfirmDialog
         open={isConfirmingOverwrite}
         title="文字起こし"
-        message="確定済みのラベルも、文字起こしの結果で書き直しますか?"
+        message="ラベルがある区間も、文字起こしの結果で書き直しますか?"
         confirmLabel="書き直す"
         onConfirm={confirmOverwrite}
         onCancel={cancelOverwrite}
       />
       <ConfirmDialog
-        open={isConfirmingStop}
+        open={isConfirmingTranscriptionStop}
         title="文字起こし"
         message="中止しますか?終わった区間のラベルは残ります。"
         confirmLabel="中止する"
-        onConfirm={confirmStop}
-        onCancel={dismissStop}
+        onConfirm={confirmTranscriptionStop}
+        onCancel={dismissTranscriptionStop}
       />
     </div>
   );

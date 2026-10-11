@@ -1,4 +1,5 @@
 import threading
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -12,6 +13,10 @@ _model = None
 _model_lock = threading.Lock()
 
 
+class SpeechDetectionCancelled(Exception):
+    """呼び出し側が中止を求めたため、検出を途中でやめた"""
+
+
 def _get_model():
     # 読み込みに数秒かかるため、最初に使うときに一度だけ読み込む
     global _model
@@ -20,19 +25,70 @@ def _get_model():
     return _model
 
 
-def detect_speech(samples: np.ndarray, sample_rate: int, params: VadParams) -> list[tuple[float, float]]:
-    """モノラル波形から発話区間を検出し、(開始秒, 終了秒)の一覧を返す"""
+class _ProbabilityRecorder:
+    """get_speech_timestampsに渡すモデルの代わりに使い、窓ごとの発話らしさを控えておく。
+    get_speech_timestampsは判定の途中の値を返さないため、モデルを包んで受け取る
+    (get_speech_timestampsはモデルをreset_statesと呼び出しにしか使わない)"""
+
+    def __init__(self, model) -> None:
+        self._model = model
+        self.latest_probability = 0.0
+
+    def reset_states(self) -> None:
+        self._model.reset_states()
+
+    def __call__(self, chunk: torch.Tensor, sampling_rate: int) -> torch.Tensor:
+        probability = self._model(chunk, sampling_rate)
+        self.latest_probability = probability.item()
+        return probability
+
+
+def detect_speech(
+    samples: np.ndarray,
+    sample_rate: int,
+    params: VadParams,
+    on_progress: Callable[[int], None],
+    on_speech_found: Callable[[float, float], None],
+    cancelled: threading.Event,
+) -> list[tuple[float, float]]:
+    """モノラル波形から発話区間を検出し、(開始秒, 終了秒)の一覧を返す。
+    途中経過として、進み具合(0〜100%)をon_progressで、判定済みの範囲で発話らしさがしきい値を超えた部分(開始秒, 終了秒)を
+    on_speech_foundで知らせる。後者は区間の切り出し(最短の発話・余白など)を当てはめる前の値なので、戻り値の区間とはずれる。
+    cancelledが立ったらSpeechDetectionCancelledを投げて途中でやめる"""
     # Silero VADは8kHzか16kHzの音声しか受け付けないため、指定されたレートへリサンプリングしてから渡す
     vad_sample_rate = params.sampling_rate
     wav = torch.from_numpy(samples.astype(np.float32))
     if sample_rate != vad_sample_rate:
         wav = resample(wav, sample_rate, vad_sample_rate)
+    vad_duration_sec = len(wav) / vad_sample_rate
 
     with _model_lock:
+        recorder = _ProbabilityRecorder(_get_model())
+        # 判定済みの位置と、しきい値を超え始めた位置(超えていなければNone)
+        judged_until_sec = 0.0
+        speech_start_sec: float | None = None
+
+        # Silero VADは窓(数十ms)を1つ判定するたびに、その窓の終わりまでの割合を渡してこのコールバックを呼ぶ。
+        # get_speech_timestampsには途中で止める手段がないため、中止はここで例外を投げて抜ける
+        # (モデルの内部状態は次の呼び出しの最初にリセットされるので、途中でやめても影響しない)
+        def track_progress(percent: float) -> None:
+            nonlocal judged_until_sec, speech_start_sec
+            if cancelled.is_set():
+                raise SpeechDetectionCancelled
+            window_start_sec = judged_until_sec
+            judged_until_sec = percent / 100 * vad_duration_sec
+            is_speech = recorder.latest_probability >= params.threshold
+            if is_speech and speech_start_sec is None:
+                speech_start_sec = window_start_sec
+            elif not is_speech and speech_start_sec is not None:
+                on_speech_found(speech_start_sec, window_start_sec)
+                speech_start_sec = None
+            on_progress(int(percent))
+
         # return_seconds=Trueは秒を小数1桁に丸めてしまうため、サンプル位置で受け取って自前で秒に直す
         timestamps = get_speech_timestamps(
             wav,
-            _get_model(),
+            recorder,
             sampling_rate=vad_sample_rate,
             threshold=params.threshold,
             neg_threshold=params.neg_threshold,
@@ -42,6 +98,7 @@ def detect_speech(samples: np.ndarray, sample_rate: int, params: VadParams) -> l
             speech_pad_ms=params.speech_pad_ms,
             min_silence_at_max_speech=params.min_silence_at_max_speech,
             use_max_poss_sil_at_max_speech=params.use_max_poss_sil_at_max_speech,
+            progress_tracking_callback=track_progress,
         )
     # リサンプリング後のサンプル数の丸めで、末尾の区間が元の音声の長さをわずかに超えることがあるため切り詰める
     duration_sec = len(samples) / sample_rate

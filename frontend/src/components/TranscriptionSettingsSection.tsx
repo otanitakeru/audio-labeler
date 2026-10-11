@@ -3,7 +3,7 @@ import { DEFAULT_TRANSCRIPTION_SETTINGS, findTranscriptionSettingsError } from "
 import type { TranscriptionSettings, TranscriptionTargetMode } from "../types";
 
 const TARGET_MODE_OPTIONS: { value: TranscriptionTargetMode; label: string }[] = [
-  { value: "unlabeledOrCandidates", label: "ラベルが空の区間と候補" },
+  { value: "unlabeled", label: "ラベルが空の区間" },
   { value: "all", label: "すべての区間(ラベルがある区間も書き直す)" },
 ];
 

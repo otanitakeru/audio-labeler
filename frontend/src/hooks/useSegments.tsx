@@ -20,7 +20,6 @@ type SegmentsState = {
   applyDetectedSegments: (
     ranges: Pick<Segment, "startSec" | "endSec">[],
     mode: ExistingSegmentsMode,
-    source: Segment["source"],
   ) => SegmentMutationResult;
   // 文字起こしの結果をラベルとして入れる。
   // 1回の実行では同じhistoryGroupKeyを渡し、届いた順に入れた結果を履歴上1つの操作にまとめる
@@ -141,19 +140,17 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
   function addSegment(startSec: number, endSec: number, label: string): SegmentMutationResult {
     const error = validateNewSegment(startSec, endSec);
     if (error) return { success: false, error };
-    commitSegments((prev) => [...prev, { id: crypto.randomUUID(), startSec, endSec, label, source: "manual" }]);
+    commitSegments((prev) => [...prev, { id: crypto.randomUUID(), startSec, endSec, label }]);
     return { success: true };
   }
 
-  // 区間(startSec/endSec)は変えずラベル文言のみ更新するため、他区間との重なりは再検証不要。
-  // 自動検出の候補(auto)は、人がラベルを入力した時点で確認済みとみなし確定(manual)にする(PLAN.md 5章)
+  // 区間(startSec/endSec)は変えずラベル文言のみ更新するため、他区間との重なりは再検証不要
   function updateSegmentLabel(id: string, label: string): void {
-    commitSegments((prev) => prev.map((s) => (s.id === id ? { ...s, label, source: "manual" } : s)));
+    commitSegments((prev) => prev.map((s) => (s.id === id ? { ...s, label } : s)));
   }
 
   // ラベルトラック上でのドラッグによる区間の移動・リサイズを確定する。addSegmentと同じ
-  // バリデーション(長さ・重なり)を通すことで、位置編集も新規追加と一貫した挙動にする。
-  // ラベル入力と同様、位置を調整した候補(auto)も確定(manual)にする
+  // バリデーション(長さ・重なり)を通すことで、位置編集も新規追加と一貫した挙動にする
   function updateSegmentRange(
     id: string,
     startSec: number,
@@ -166,10 +163,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
       segments.filter((s) => s.id !== id),
     );
     if (error) return { success: false, error };
-    commitSegments(
-      (prev) => prev.map((s) => (s.id === id ? { ...s, startSec, endSec, source: "manual" } : s)),
-      historyGroupKey,
-    );
+    commitSegments((prev) => prev.map((s) => (s.id === id ? { ...s, startSec, endSec } : s)), historyGroupKey);
     return { success: true };
   }
 
@@ -179,7 +173,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
 
   // 結合後の区間は指定の区間のIDを引き継ぐ(選択中の区間を結合したとき、選択を保ったまま続けて操作できるようにするため)。
   // 隣同士の間に他の区間はないため、2つを覆う範囲にしても重なりは起きない。
-  // ラベルは時間順に半角スペースでつなぐ(空のラベルは飛ばす)。人が結合を指示した区間なので確定(manual)にする
+  // ラベルは時間順に半角スペースでつなぐ(空のラベルは飛ばす)
   function mergeWithAdjacentSegment(id: string, direction: SegmentDirection): void {
     const target = segments.find((s) => s.id === id);
     const neighbor = findAdjacentSegment(segments, id, direction);
@@ -190,14 +184,13 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
       startSec: first.startSec,
       endSec: second.endSec,
       label: [first.label, second.label].filter((label) => label !== "").join(" "),
-      source: "manual",
     };
     commitSegments((prev) => prev.filter((s) => s.id !== neighbor.id).map((s) => (s.id === id ? merged : s)));
   }
 
   // 全区間を入れ替える(ラベルファイルのインポート、自動検出のreplaceAll)。
   // 1件でも不正があれば何も変更しない(途中まで読み込まれた状態を作らないため)
-  function replaceSegments(ranges: LabeledRange[], source: Segment["source"] = "manual"): SegmentMutationResult {
+  function replaceSegments(ranges: LabeledRange[]): SegmentMutationResult {
     const sorted = [...ranges].sort((a, b) => a.startSec - b.startSec);
     for (let i = 0; i < sorted.length; i++) {
       const { startSec, endSec } = sorted[i];
@@ -205,33 +198,38 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
       const error = findRangeError(startSec, endSec, i > 0 ? [sorted[i - 1]] : []);
       if (error) return { success: false, error: `${startSec}〜${endSec}秒の区間: ${error}` };
     }
-    commitSegments(() => sorted.map((r) => ({ ...r, id: crypto.randomUUID(), source })));
+    commitSegments(() => sorted.map((r) => ({ ...r, id: crypto.randomUUID() })));
     return { success: true };
   }
 
-  // 自動検出の結果を反映する。ラベルは空のまま(人が確認して入力する)。
-  // 通常は候補(auto)として追加するが、設定によっては最初から確定(manual)として追加する(sourceで指定)
+  // 自動検出の結果を反映する。ラベルは空のまま(人が確認して入力するか、文字起こしで埋める)
   function applyDetectedSegments(
     ranges: Pick<Segment, "startSec" | "endSec">[],
     mode: ExistingSegmentsMode,
-    source: Segment["source"],
   ): SegmentMutationResult {
-    const candidates = ranges.map((r) => ({ ...r, label: "" }));
-    if (mode === "replaceAll") return replaceSegments(candidates, source);
+    const detected = ranges.map((r) => ({ ...r, label: "" }));
+    if (mode === "replaceAll") return replaceSegments(detected);
 
-    // 人が確認した区間を優先するため、確定済みと重なる候補はエラーにせず追加しないだけにする
-    const kept = segments.filter((s) => s.source === "manual");
+    // 人が作った・直した区間を優先するため、既にある区間と重なる検出結果はエラーにせず足さないだけにする。
+    // 自動検出中は区間の編集を止めているため、実行を始めた時点の区間と比べてよい
     const accepted: Segment[] = [];
-    for (const candidate of candidates) {
-      if (findRangeError(candidate.startSec, candidate.endSec, [...kept, ...accepted])) continue;
-      accepted.push({ ...candidate, id: crypto.randomUUID(), source });
+    for (const range of detected) {
+      if (findRangeError(range.startSec, range.endSec, [...segments, ...accepted])) continue;
+      accepted.push({ ...range, id: crypto.randomUUID() });
     }
-    commitSegments(() => [...kept, ...accepted]);
+    // 検出し直したときは前回の結果と重なって何も足されないため、黙って終わらず理由を知らせる
+    if (accepted.length === 0) {
+      return {
+        success: false,
+        error:
+          "既にある区間と重ならない区間は見つかりませんでした。検出し直すときは、設定の「既にある区間」を「すべて置き換える」にしてください。",
+      };
+    }
+    commitSegments((prev) => [...prev, ...accepted]);
     return { success: true };
   }
 
   // 結果は届いた順に1件ずつ入れるが、同じhistoryGroupKeyでまとめるため、1回の実行分を元に戻す1回で戻せる。
-  // sourceは変えない。候補に戻すと、次の自動検出(keepManual)で人が決めた区間が消えてしまうため(PLAN.md 5章)
   // 文字起こし中は区間の編集を止めているため、実行を始めた時点の区間にそのまま入れてよい
   function applyTranscribedLabel(id: string, label: string, historyGroupKey: string): void {
     const sanitized = sanitizeLabel(label);

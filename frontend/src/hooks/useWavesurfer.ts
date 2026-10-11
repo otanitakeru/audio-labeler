@@ -33,41 +33,79 @@ type SegmentColors = {
   // 全体波形上に重ねる色。全体波形は縦幅が小さく薄い色だと見えにくいため、メイン波形より濃くする
   minimap: string;
 };
-// 区間の出どころごとの配色。自動検出の候補(auto)は、人が確認した確定済み(manual)と見分けられるよう灰色にする
-const SEGMENT_COLORS: Record<Segment["source"], SegmentColors> = {
-  manual: {
-    region: "rgba(37, 99, 235, 0.12)",
-    activeRegion: "rgba(37, 99, 235, 0.25)",
-    labelBackground: "rgba(239, 246, 255, 0.95)",
-    labelBorder: "#2563eb",
-    minimap: "rgba(37, 99, 235, 0.3)",
-  },
-  auto: {
-    region: "rgba(107, 114, 128, 0.12)",
-    activeRegion: "rgba(107, 114, 128, 0.25)",
-    labelBackground: "rgba(243, 244, 246, 0.95)",
-    labelBorder: "#6b7280",
-    minimap: "rgba(107, 114, 128, 0.35)",
-  },
+const SEGMENT_COLORS: SegmentColors = {
+  region: "rgba(37, 99, 235, 0.12)",
+  activeRegion: "rgba(37, 99, 235, 0.25)",
+  labelBackground: "rgba(239, 246, 255, 0.95)",
+  labelBorder: "#2563eb",
+  minimap: "rgba(37, 99, 235, 0.3)",
 };
-// 文字起こしで処理中の区間の配色。確定済み(青)・候補(灰色)のどちらとも見分けられるよう緑にし、
-// 選択中の区間と同じくらい塗りを濃くして目立たせる
-const HIGHLIGHTED_SEGMENT_COLORS: SegmentColors = {
+// 編集を止めている間(自動検出・文字起こし中)の配色。押しても操作できないことが分かるよう灰色にする
+const LOCKED_SEGMENT_COLORS: SegmentColors = {
+  region: "rgba(107, 114, 128, 0.12)",
+  activeRegion: "rgba(107, 114, 128, 0.25)",
+  labelBackground: "rgba(243, 244, 246, 0.95)",
+  labelBorder: "#6b7280",
+  minimap: "rgba(107, 114, 128, 0.35)",
+};
+// 自動検出・文字起こしで処理した分の配色。普段の青・編集を止めている間の灰色のどちらとも見分けられるよう緑にする。
+// 文字起こしで処理し終わった区間と、自動検出の途中経過(発話らしさがしきい値を超えた部分)に使う
+const PROCESSED_SEGMENT_COLORS: SegmentColors = {
   region: "rgba(22, 163, 74, 0.25)",
   activeRegion: "rgba(22, 163, 74, 0.25)",
   labelBackground: "rgba(240, 253, 244, 0.95)",
   labelBorder: "#16a34a",
   minimap: "rgba(22, 163, 74, 0.45)",
 };
-// 編集を止めている間(文字起こし中)は、出どころによらず処理中の区間(highlightedSegmentId)だけを緑、他を灰色にする。
-// 候補・確定の色分けのままだと、どこを処理しているかが分からないため
+// 文字起こしで今処理している区間の配色。処理し終わった区間(緑)と見分けられるよう、同じ緑でより濃くする
+const HIGHLIGHTED_SEGMENT_COLORS: SegmentColors = {
+  region: "rgba(22, 163, 74, 0.45)",
+  activeRegion: "rgba(22, 163, 74, 0.45)",
+  labelBackground: "rgba(220, 252, 231, 0.95)",
+  labelBorder: "#15803d",
+  minimap: "rgba(22, 163, 74, 0.7)",
+};
+
+// 文字起こしで処理中の区間の塗りを、処理し終わった区間の緑と濃い緑の間でなめらかに行き来させる(速さは実行中の枠の色の
+// 変化(index.cssのborder-pulse)と揃える)。区間はwavesurferのShadow DOMの中にありページのCSSが届かないため、要素に直接かける
+function pulseHighlightedBackground(el: HTMLElement, highlighted: string, processed: string): Animation {
+  return el.animate([{ backgroundColor: processed }, { backgroundColor: highlighted }], {
+    duration: 1000,
+    iterations: Infinity,
+    direction: "alternate",
+    easing: "ease-in-out",
+  });
+}
+
+// 時間の範囲を、親要素(波形全体の幅を持つ要素)に対する割合で置いた帯を作る
+function createRangeBar(
+  range: Pick<Segment, "startSec" | "endSec">,
+  duration: number,
+  background: string,
+): HTMLDivElement {
+  const bar = document.createElement("div");
+  bar.style.cssText = [
+    "position:absolute",
+    "top:0",
+    "bottom:0",
+    `left:${(range.startSec / duration) * 100}%`,
+    `width:${((range.endSec - range.startSec) / duration) * 100}%`,
+    `background:${background}`,
+  ].join(";");
+  return bar;
+}
+
+// 編集を止めている間は、処理中の区間(highlightedSegmentId)を濃い緑、処理し終わった区間を緑、他を灰色にする。
+// どこまで処理したかを波形上で追えるようにするため
 function getSegmentColors(
   segment: Segment,
   editingLocked: boolean,
   highlightedSegmentId: string | null,
+  processedSegmentIds: ReadonlySet<string>,
 ): SegmentColors {
-  if (!editingLocked) return SEGMENT_COLORS[segment.source];
-  return segment.id === highlightedSegmentId ? HIGHLIGHTED_SEGMENT_COLORS : SEGMENT_COLORS.auto;
+  if (!editingLocked) return SEGMENT_COLORS;
+  if (segment.id === highlightedSegmentId) return HIGHLIGHTED_SEGMENT_COLORS;
+  return processedSegmentIds.has(segment.id) ? PROCESSED_SEGMENT_COLORS : LOCKED_SEGMENT_COLORS;
 }
 
 // ラベル文言を表示・編集する帯の高さ(px)。「波形の下側にラベルを書く」という見た目にするため、
@@ -156,7 +194,7 @@ function createLabelContent(initialText: string, background: string, borderColor
   ].join(";");
   setLabelContentColors(el, background, borderColor);
   el.addEventListener("focus", () => {
-    // 候補が確定に変わると色が変わるため、作成時ではなくその時点の枠線色を使う
+    // 自動検出・文字起こしの開始・終了で色が変わるため、作成時ではなくその時点の枠線色を使う
     el.style.outline = `2px solid ${el.style.borderTopColor}`;
     el.style.outlineOffset = "-2px";
   });
@@ -184,15 +222,20 @@ type AdjustBarHandlers = {
 type AdjustBar = {
   element: HTMLDivElement;
   setActive: (active: boolean) => void;
+  // 編集を止めている間(自動検出・文字起こし中)は、操作できないことが分かるよう区間と同じ灰色にし、
+  // カーソルを当てても掴める・幅を変えられる形に変えない
+  setLocked: (locked: boolean) => void;
 };
 
-// 調整帯の配色。非選択時も「掴める」ことが分かる程度に見せ、選択中・ホバー中は濃くする
+// 調整帯の配色。非選択時も「掴める」ことが分かる程度に見せ、選択中・ホバー中は濃くする。
+// lockedは編集を止めている間の配色で、ホバーしても変えない
 const ADJUST_TRACK_COLOR = {
   idle: "rgba(37, 99, 235, 0.12)",
   hover: "rgba(37, 99, 235, 0.22)",
   active: "rgba(37, 99, 235, 0.3)",
+  locked: "rgba(107, 114, 128, 0.12)",
 };
-const ADJUST_KNOB_COLOR = { idle: "#93c5fd", hover: "#60a5fa", active: "#2563eb" };
+const ADJUST_KNOB_COLOR = { idle: "#93c5fd", hover: "#60a5fa", active: "#2563eb", locked: "#d1d5db" };
 
 // ラベル帯の下に置く、区間の位置・幅を調整する帯。中央(グリップ)のドラッグで移動、両端のつまみのドラッグで幅を変える。
 // 波形部分やラベル帯でのドラッグ(新規のドラッグ選択・文字選択)と操作を混同しないよう、位置・幅はここでしか変えられない
@@ -248,13 +291,17 @@ function createAdjustBar({ onStart, onMove, onEnd }: AdjustBarHandlers): AdjustB
 
   let isActive = false;
   let isHovered = false;
+  let isLocked = false;
   const render = () => {
-    const state = isActive ? "active" : isHovered ? "hover" : "idle";
+    const state = isLocked ? "locked" : isActive ? "active" : isHovered ? "hover" : "idle";
     bar.style.backgroundColor = ADJUST_TRACK_COLOR[state];
     startKnob.style.backgroundColor = ADJUST_KNOB_COLOR[state];
     endKnob.style.backgroundColor = ADJUST_KNOB_COLOR[state];
     grip.style.backgroundImage = `radial-gradient(circle, ${ADJUST_KNOB_COLOR[state]} 1.5px, transparent 1.5px)`;
     grip.style.backgroundSize = "5px 4px";
+    bar.style.cursor = isLocked ? "default" : "grab";
+    startKnob.style.cursor = isLocked ? "default" : "ew-resize";
+    endKnob.style.cursor = isLocked ? "default" : "ew-resize";
   };
   render();
   bar.addEventListener("pointerenter", () => {
@@ -294,6 +341,11 @@ function createAdjustBar({ onStart, onMove, onEnd }: AdjustBarHandlers): AdjustB
     element: bar,
     setActive: (active) => {
       isActive = active;
+      render();
+    },
+    setLocked: (locked) => {
+      if (isLocked === locked) return;
+      isLocked = locked;
       render();
     },
   };
@@ -377,10 +429,14 @@ type UseWavesurferOptions = {
   segmentNudgeStepMs: number;
   // 縦の目盛り(AmplitudeAxis)上でのCmd/Ctrl+スクロールをverticalZoomに反映するための参照
   amplitudeAxisRef: React.RefObject<HTMLDivElement | null>;
-  // trueの間(文字起こし中)は、波形・ラベル領域での選択・編集・シークを止める。表示位置の移動(ホイール・全体波形)はできる
+  // trueの間(自動検出・文字起こし中)は、波形・ラベル領域での選択・編集・シークを止める。表示位置の移動(ホイール・全体波形)はできる
   editingLocked: boolean;
-  // editingLockedの間、青で目立たせる区間(文字起こし中の区間)
+  // editingLockedの間、濃い緑で目立たせる区間(文字起こしで処理中の区間)
   highlightedSegmentId: string | null;
+  // editingLockedの間、緑にする区間(文字起こしで処理し終わった区間)
+  processedSegmentIds: ReadonlySet<string>;
+  // 自動検出の途中経過(発話らしさがしきい値を超えた部分)。区間とは別に、波形の上に塗るだけで操作はできない
+  detectionPreviewRanges: Pick<Segment, "startSec" | "endSec">[];
 };
 
 type UseWavesurferResult = {
@@ -426,6 +482,8 @@ export function useWavesurfer(
     amplitudeAxisRef,
     editingLocked,
     highlightedSegmentId,
+    processedSegmentIds,
+    detectionPreviewRanges,
   }: UseWavesurferOptions,
 ): UseWavesurferResult {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -438,6 +496,8 @@ export function useWavesurfer(
   const minimapElementRef = useRef<HTMLElement | null>(null);
   // 全体波形の上に確定済み区間の範囲を表示するレイヤー
   const minimapSegmentLayerRef = useRef<HTMLDivElement | null>(null);
+  // メイン波形の上に自動検出の途中経過を表示するレイヤー
+  const detectionPreviewLayerRef = useRef<HTMLDivElement | null>(null);
   // イベントハンドラは初期化effect内で一度だけ登録するため、最新の値を参照できるようrefに控える
   const segmentsRef = useRef(segments);
   segmentsRef.current = segments;
@@ -458,6 +518,8 @@ export function useWavesurfer(
   editingLockedRef.current = editingLocked;
   const highlightedSegmentIdRef = useRef(highlightedSegmentId);
   highlightedSegmentIdRef.current = highlightedSegmentId;
+  const processedSegmentIdsRef = useRef(processedSegmentIds);
+  processedSegmentIdsRef.current = processedSegmentIds;
   // 生成時に参照するだけで、変更は下のeffectでsetOptionsにより反映する(波形を作り直さないため)
   const playbackScrollModeRef = useRef(playbackScrollMode);
   playbackScrollModeRef.current = playbackScrollMode;
@@ -539,6 +601,13 @@ export function useWavesurfer(
     // ラベル帯・調整帯はこの余白に収まり、縦方向に拡大しても波形がラベルに被らない
     wavesurfer.getWrapper().style.paddingBottom = `${LABEL_AREA_HEIGHT_PX}px`;
 
+    // wrapperは波形全体の幅を持ち、拡大・スクロールに合わせて動くため、時間の割合で置けば波形と位置が揃う。
+    // ラベル領域には被せず、波形の描画領域だけを覆う
+    const detectionPreviewLayer = document.createElement("div");
+    detectionPreviewLayer.style.cssText = `position:absolute;top:0;left:0;right:0;bottom:${LABEL_AREA_HEIGHT_PX}px;z-index:2;pointer-events:none`;
+    wavesurfer.getWrapper().appendChild(detectionPreviewLayer);
+    detectionPreviewLayerRef.current = detectionPreviewLayer;
+
     const minimapElement = getMinimapElement(wavesurfer);
     minimapElementRef.current = minimapElement;
     const detachMinimapScroll = minimapElement ? attachMinimapScroll(minimapElement, wavesurfer) : () => {};
@@ -591,6 +660,7 @@ export function useWavesurfer(
       detachMinimapScroll();
       minimapElementRef.current = null;
       minimapSegmentLayerRef.current = null;
+      detectionPreviewLayerRef.current = null;
       disableDragSelection();
       wavesurfer.destroy();
       wavesurferRef.current = null;
@@ -665,13 +735,16 @@ export function useWavesurfer(
       // 区間は作り直さないため、ラベルの比較・復元には生成時点ではなく常に最新の値を使う
       const getCurrentLabel = () => segmentsRef.current.find((s) => s.id === id)?.label ?? "";
 
-      // 候補(auto)がラベル入力・位置調整で確定(manual)に変わったとき・文字起こしで処理中の区間が移ったときは、
-      // 区間を作り直さず配色だけ切り替える
+      // 編集を止めた・再開したとき、文字起こしで処理中・処理済みの区間が変わったときは、区間を作り直さず配色だけ切り替える
       const getColors = (latest: Segment) =>
-        getSegmentColors(latest, editingLockedRef.current, highlightedSegmentIdRef.current);
+        getSegmentColors(
+          latest,
+          editingLockedRef.current,
+          highlightedSegmentIdRef.current,
+          processedSegmentIdsRef.current,
+        );
       let colors = getColors(segment);
       const content = createLabelContent(segment.label, colors.labelBackground, colors.labelBorder);
-      content.style.cursor = "pointer";
       const region = regions.addRegion({
         id,
         start: segment.startSec,
@@ -720,6 +793,27 @@ export function useWavesurfer(
       });
       element.appendChild(adjustBar.element);
 
+      // 編集を止めている間は、調整帯を灰色にし、ラベル帯・調整帯にカーソルを当てても形を変えない(押しても何も起きないため)。
+      // 文字起こしで処理中の区間のときだけ塗りを動かし、処理中でなくなったら止めてsetOptionsで指定した色に戻す
+      let pulse: Animation | null = null;
+      const syncLockedAppearance = () => {
+        const locked = editingLockedRef.current;
+        adjustBar.setLocked(locked);
+        if (!content.isContentEditable) content.style.cursor = locked ? "default" : "pointer";
+        const isHighlighted = colors === HIGHLIGHTED_SEGMENT_COLORS;
+        if (isHighlighted && !pulse) {
+          pulse = pulseHighlightedBackground(
+            element,
+            HIGHLIGHTED_SEGMENT_COLORS.region,
+            PROCESSED_SEGMENT_COLORS.region,
+          );
+        } else if (!isHighlighted && pulse) {
+          pulse.cancel();
+          pulse = null;
+        }
+      };
+      syncLockedAppearance();
+
       const deactivate = () => {
         if (activeSegmentRef.current?.id !== id) return;
         activeSegmentRef.current = null;
@@ -733,12 +827,13 @@ export function useWavesurfer(
         adjustBar.setActive(true);
         region.setOptions({ color: colors.activeRegion });
       };
-      // 区間は作り直さないため、同じIDのまま中身が変わったとき(候補の確定、元に戻す/やり直す、文字起こしの進行)は
+      // 区間は作り直さないため、同じIDのまま中身が変わったとき(元に戻す/やり直す、文字起こしの進行)は
       // ここで見た目に反映する。移動・幅変更・ラベル編集の直後は見た目が既に最新なので、値が変わったときだけ触る
       const update = (latest: Segment) => {
         colors = getColors(latest);
         setLabelContentColors(content, colors.labelBackground, colors.labelBorder);
         region.setOptions({ color: activeSegmentRef.current?.id === id ? colors.activeRegion : colors.region });
+        syncLockedAppearance();
         if (region.start !== latest.startSec || region.end !== latest.endSec) {
           region.setOptions({ start: latest.startSec, end: latest.endSec });
         }
@@ -780,34 +875,42 @@ export function useWavesurfer(
       // 確定後は選択状態のまま文字編集だけを終える
       content.addEventListener("blur", () => {
         content.contentEditable = "false";
-        content.style.cursor = "pointer";
+        // 編集を止めたことで入力が終わったときは、カーソルの形を変えないままにする
+        content.style.cursor = editingLockedRef.current ? "default" : "pointer";
         const label = sanitizeLabel(content.textContent ?? "");
         content.textContent = label;
         if (label !== getCurrentLabel()) onUpdateLabelRef.current(id, label);
       });
     }
     // 文字起こしの開始・終了、処理中の区間の移り変わりでも配色を更新するため、区間が変わらなくても走らせる
-  }, [segments, isReady, editingLocked, highlightedSegmentId]);
+  }, [segments, isReady, editingLocked, highlightedSegmentId, processedSegmentIds]);
 
-  // 全体波形の上に確定済み区間の範囲を表示する。数が多くても描き直しは軽いため、区間が変わるたびに全て作り直す
+  // 全体波形の上に確定済み区間の範囲と、自動検出の途中経過を表示する。数が多くても描き直しは軽いため、変わるたびに全て作り直す
   useEffect(() => {
     const layer = minimapSegmentLayerRef.current;
     if (!layer || !isReady || duration <= 0) return;
     layer.replaceChildren(
       ...segments.map((segment) => {
-        const bar = document.createElement("div");
-        bar.style.cssText = [
-          "position:absolute",
-          "top:0",
-          "bottom:0",
-          `left:${(segment.startSec / duration) * 100}%`,
-          `width:${((segment.endSec - segment.startSec) / duration) * 100}%`,
-          `background:${getSegmentColors(segment, editingLocked, highlightedSegmentId).minimap}`,
-        ].join(";");
+        const colors = getSegmentColors(segment, editingLocked, highlightedSegmentId, processedSegmentIds);
+        const bar = createRangeBar(segment, duration, colors.minimap);
+        // 帯は作り直すたびに捨てるため、アニメーションも要素ごと消える
+        if (colors === HIGHLIGHTED_SEGMENT_COLORS) {
+          pulseHighlightedBackground(bar, HIGHLIGHTED_SEGMENT_COLORS.minimap, PROCESSED_SEGMENT_COLORS.minimap);
+        }
         return bar;
       }),
+      ...detectionPreviewRanges.map((range) => createRangeBar(range, duration, PROCESSED_SEGMENT_COLORS.minimap)),
     );
-  }, [segments, isReady, duration, editingLocked, highlightedSegmentId]);
+  }, [segments, isReady, duration, editingLocked, highlightedSegmentId, processedSegmentIds, detectionPreviewRanges]);
+
+  // メイン波形の上に自動検出の途中経過を表示する。終わると空になり、正式な区間に置き換わる
+  useEffect(() => {
+    const layer = detectionPreviewLayerRef.current;
+    if (!layer || !isReady || duration <= 0) return;
+    layer.replaceChildren(
+      ...detectionPreviewRanges.map((range) => createRangeBar(range, duration, PROCESSED_SEGMENT_COLORS.region)),
+    );
+  }, [isReady, duration, detectionPreviewRanges]);
 
   // 編集を止めている間は、波形・ラベル領域での押す操作(シーク・ドラッグ選択・区間の選択・調整・文言の編集)を
   // 波形に届く前のキャプチャフェーズで止める。ホイールは止めないため、スクロール・拡大縮小はできる。

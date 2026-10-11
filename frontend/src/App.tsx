@@ -8,6 +8,7 @@ import { DisplaySettingsProvider } from "./hooks/useDisplaySettings";
 import { EditingSettingsProvider } from "./hooks/useEditingSettings";
 import { SegmentsProvider } from "./hooks/useSegments";
 import { ShortcutBindingsProvider } from "./hooks/useShortcutBindings";
+import { useUnsavedChangesWarning } from "./hooks/useUnsavedChangesWarning";
 import { VadSettingsProvider } from "./hooks/useVadSettings";
 import EditScreen from "./pages/EditScreen";
 import HomeScreen from "./pages/HomeScreen";
@@ -18,6 +19,7 @@ function AppLayout() {
   const previousUploadIdRef = useRef<string | null>(null);
   // 設定は画面遷移ではなくダイアログで開く。編集画面を残したまま(波形の再読み込みや表示位置のリセットなしに)設定を変えられるようにするため
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  useUnsavedChangesWarning();
 
   // 新しい音声が読み込まれた瞬間(ホーム画面/ヘッダーメニューどちらから読み込んでも)だけ編集画面へ遷移し、
   // チャンネル番号が範囲外なら直せるよう設定ダイアログも開く。

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAudioFileOpener } from "../hooks/useAudioFileOpener";
 import { useAudioSession } from "../hooks/useAudioSession";
 import { useLabelFile } from "../hooks/useLabelFile";
 import AlertDialog from "./AlertDialog";
@@ -10,7 +11,8 @@ type AppHeaderProps = {
 };
 
 function AppHeader({ onOpenSettings }: AppHeaderProps) {
-  const { uploadId, isUploading, uploadFile } = useAudioSession();
+  const { uploadId, isUploading } = useAudioSession();
+  const { openAudioFile, isConfirmingDiscard, confirmDiscard, cancelDiscard } = useAudioFileOpener();
   const {
     error: labelFileError,
     canExport,
@@ -61,7 +63,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     setIsMenuOpen(false);
-                    if (file) uploadFile(file);
+                    if (file) openAudioFile(file);
                     e.target.value = "";
                   }}
                 />
@@ -119,6 +121,14 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
         confirmLabel="置き換える"
         onConfirm={confirmReplace}
         onCancel={cancelReplace}
+      />
+      <ConfirmDialog
+        open={isConfirmingDiscard}
+        title="新規音声を読み込む"
+        message="書き出していないラベルは消えます。新しい音声を読み込みますか?"
+        confirmLabel="読み込む"
+        onConfirm={confirmDiscard}
+        onCancel={cancelDiscard}
       />
     </header>
   );

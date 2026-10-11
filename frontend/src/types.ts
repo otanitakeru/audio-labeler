@@ -57,6 +57,18 @@ export type TranscriptionSettings = {
   language: string | null;
 };
 
+// 音声を読み込んだ後に、続けてどこまで処理するか
+// - none: 何もしない
+// - speechDetection: 自動検出まで
+// - transcription: 文字起こしまで(ラベルファイルを読み込まないときは、自動検出してから文字起こしする)
+export type AfterLoadProcessing = "none" | "speechDetection" | "transcription";
+
+// 読み込みのダイアログで選んだ内容のうち、次の読み込みの初期値として覚えておくもの
+export type AudioLoadChoices = {
+  channel: number;
+  afterLoadProcessing: AfterLoadProcessing;
+};
+
 // 区間の編集操作に関する設定
 export type EditingSettings = {
   // ショートカットで区間の開始・終了を1回ずらす量(ミリ秒)

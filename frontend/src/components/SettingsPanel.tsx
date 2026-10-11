@@ -1,11 +1,9 @@
 import { useState } from "react";
 import Button from "./Button";
-import ChannelInput from "./ChannelInput";
 import NumberInput from "./NumberInput";
 import ShortcutBindingRow from "./ShortcutBindingRow";
 import TranscriptionSettingsSection from "./TranscriptionSettingsSection";
 import VadSettingsSection from "./VadSettingsSection";
-import { useAudioSession } from "../hooks/useAudioSession";
 import {
   DEFAULT_MAIN_WAVEFORM_HEIGHT,
   DEFAULT_MINIMAP_HEIGHT,
@@ -33,7 +31,7 @@ const PLAYBACK_SCROLL_MODE_OPTIONS: { value: PlaybackScrollMode; label: string }
   { value: "none", label: "動かさない" },
 ];
 
-const CATEGORIES = ["音声読み込み", "表示設定", "編集", "自動検出", "文字起こし", "ショートカットキー"] as const;
+const CATEGORIES = ["表示設定", "編集", "自動検出", "文字起こし", "ショートカットキー"] as const;
 type Category = (typeof CATEGORIES)[number];
 
 type SettingsPanelProps = {
@@ -44,7 +42,6 @@ type SettingsPanelProps = {
 // ダイアログごと中身が破棄されるため、下書きも捨てられる。波形の高さなどを変えるたびに背後の波形が読み込み直されるのも防げる
 function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [category, setCategory] = useState<Category>(CATEGORIES[0]);
-  const { uploadId, channel, channelCount, setChannel } = useAudioSession();
   const {
     mainWaveformHeight,
     setMainWaveformHeight,
@@ -58,7 +55,6 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { editingSettings, setEditingSettings } = useEditingSettings();
   const { transcriptionSettings, setTranscriptionSettings } = useTranscriptionSettings();
 
-  const [draftChannel, setDraftChannel] = useState(channel);
   const [draftMainWaveformHeight, setDraftMainWaveformHeight] = useState(mainWaveformHeight);
   const [draftMinimapHeight, setDraftMinimapHeight] = useState(minimapHeight);
   const [draftPlaybackScrollMode, setDraftPlaybackScrollMode] = useState(playbackScrollMode);
@@ -67,7 +63,6 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [draftEditingSettings, setDraftEditingSettings] = useState(editingSettings);
   const [draftTranscriptionSettings, setDraftTranscriptionSettings] = useState(transcriptionSettings);
 
-  const draftChannelOutOfRange = uploadId !== null && draftChannel >= channelCount;
   const vadSettingsError = findVadSettingsError(draftVadSettings);
   const transcriptionSettingsError = findTranscriptionSettingsError(draftTranscriptionSettings);
   // 別のカテゴリを開いていてもOKが押せない理由が分かるよう、下のボタンの横にも出す
@@ -76,7 +71,6 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
     : transcriptionSettingsError && `文字起こし: ${transcriptionSettingsError}`;
 
   const applyAndClose = () => {
-    setChannel(draftChannel);
     setMainWaveformHeight(draftMainWaveformHeight);
     setMinimapHeight(draftMinimapHeight);
     setPlaybackScrollMode(draftPlaybackScrollMode);
@@ -108,25 +102,6 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
             ))}
           </ul>
         </nav>
-
-        {category === "音声読み込み" && (
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto">
-            <h2 className="m-0 text-xl font-semibold text-gray-900">音声読み込み</h2>
-
-            <div className="flex flex-col gap-2">
-              <div className="font-semibold text-gray-900">チャンネル</div>
-              <p className="m-0 text-sm text-gray-500">
-                読み込む音声ファイルのうち、使用するチャンネル番号を指定します。
-              </p>
-              <ChannelInput channel={draftChannel} onChangeChannel={setDraftChannel} />
-              {draftChannelOutOfRange && (
-                <p className="m-0 text-sm text-red-600">
-                  読み込んだファイルに ch{draftChannel} は存在しません(0〜{channelCount - 1}で指定してください)
-                </p>
-              )}
-            </div>
-          </div>
-        )}
 
         {category === "表示設定" && (
           <div className="flex flex-1 flex-col gap-6 overflow-y-auto">

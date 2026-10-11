@@ -7,18 +7,16 @@ type AudioSessionState = {
   audioInfo: AudioFileInfo | null;
   uploadId: string | null;
   filename: string | null;
-  channelCount: number;
+  // 波形に表示しているチャンネル。読み込みのダイアログで選び、読み込んだ後は変えない(PLAN.md 4章-1)
   channel: number;
-  // チャンネル番号は音声を読み込む前から設定できるため、読み込んだ音声に存在しない番号になっていることがある
-  channelOutOfRange: boolean;
   isUploading: boolean;
-  // アップロード中のファイル名。アップロードが終わるまでuploadId/filenameは前の音声のままなので、
-  // 画面上で「何を読み込んでいるか」をすぐ示すために使う
-  uploadingFilename: string | null;
   error: string | null;
   clearError: () => void;
-  uploadFile: (file: File) => Promise<boolean>;
-  setChannel: (channel: number) => void;
+  // バックエンドへアップロードし、ファイルの情報を返す(失敗したらnull)。読み込みのダイアログでチャンネル数などを見てから
+  // 読み込むかを決めるため、ここでは表示中の音声を切り替えない
+  uploadFile: (file: File) => Promise<AudioFileInfo | null>;
+  // アップロード済みの音声を、指定したチャンネルで表示中の音声にする
+  loadAudio: (info: AudioFileInfo, channel: number) => void;
 };
 
 const AudioSessionContext = createContext<AudioSessionState | null>(null);
@@ -26,44 +24,39 @@ const AudioSessionContext = createContext<AudioSessionState | null>(null);
 export function AudioSessionProvider({ children }: { children: ReactNode }) {
   const [audioInfo, setAudioInfo] = useState<AudioFileInfo | null>(null);
   const [channel, setChannel] = useState(0);
-  const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isUploading = uploadingFilename !== null;
 
-  const uploadFile = async (file: File): Promise<boolean> => {
-    setUploadingFilename(file.name);
+  const uploadFile = async (file: File): Promise<AudioFileInfo | null> => {
+    setIsUploading(true);
     setError(null);
     try {
-      setAudioInfo(await uploadAudioFile(file));
-      return true;
+      return await uploadAudioFile(file);
     } catch {
       setError("音声ファイルを読み込めませんでした。WAV形式のファイルを選択してください。");
-      return false;
+      return null;
     } finally {
-      setUploadingFilename(null);
+      setIsUploading(false);
     }
   };
 
-  const uploadId = audioInfo?.uploadId ?? null;
-  const filename = audioInfo?.filename ?? null;
-  const channelCount = audioInfo?.channelCount ?? 1;
-  const channelOutOfRange = uploadId !== null && (channel < 0 || channel >= channelCount);
+  const loadAudio = (info: AudioFileInfo, nextChannel: number) => {
+    setAudioInfo(info);
+    setChannel(nextChannel);
+  };
 
   return (
     <AudioSessionContext.Provider
       value={{
         audioInfo,
-        uploadId,
-        filename,
-        channelCount,
+        uploadId: audioInfo?.uploadId ?? null,
+        filename: audioInfo?.filename ?? null,
         channel,
-        channelOutOfRange,
         isUploading,
-        uploadingFilename,
         error,
         clearError: () => setError(null),
         uploadFile,
-        setChannel,
+        loadAudio,
       }}
     >
       {children}

@@ -24,8 +24,9 @@ type TranscriptionProgress = {
 type TranscriptionState = {
   // 実行中でなければnull。実行中は区間を変える操作(編集画面・ヘッダーのラベル/音声の読み込み)をすべて止める
   progress: TranscriptionProgress | null;
-  // 実行する。ラベルがある区間まで書き直す設定(all)で、そうした区間があるときは、すぐには実行せず確認を求める
-  requestTranscription: () => void;
+  // 実行する。ラベルがある区間まで書き直す設定(all)で、そうした区間があるときは、すぐには実行せず確認を求める。
+  // targetModeを渡すと設定の対象より優先する(読み込みのダイアログでラベルファイルを選んだときは、空のラベルだけを埋めるため)
+  requestTranscription: (targetMode?: TranscriptionTargetMode) => void;
   isConfirmingOverwrite: boolean;
   confirmOverwrite: () => void;
   cancelOverwrite: () => void;
@@ -53,11 +54,10 @@ export function TranscriptionProvider({ children }: { children: ReactNode }) {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // 区間は追加順に並んでいるため、処理した区間(緑)が波形の左から右へ増えていくよう開始時刻順に並べる
-  const targets = segments
-    .filter((s) => isTranscriptionTarget(s, transcriptionSettings.targetMode))
-    .sort((a, b) => a.startSec - b.startSec);
+  const findTargets = (mode: TranscriptionTargetMode): Segment[] =>
+    segments.filter((s) => isTranscriptionTarget(s, mode)).sort((a, b) => a.startSec - b.startSec);
 
-  const runTranscription = async () => {
+  const runTranscription = async (targets: Segment[]) => {
     if (!uploadId) return;
     // 実行中は他の編集を止めているため、1回の実行で入れたラベルは必ず元に戻す1回でまとめて戻せる
     const historyGroupKey = `transcription:${crypto.randomUUID()}`;
@@ -112,7 +112,8 @@ export function TranscriptionProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const requestTranscription = () => {
+  const requestTranscription = (targetMode = transcriptionSettings.targetMode) => {
+    const targets = findTargets(targetMode);
     if (targets.length === 0) {
       setError("文字起こしする区間がありません。先に自動検出するか、区間を作ってください。");
       return;
@@ -122,7 +123,7 @@ export function TranscriptionProvider({ children }: { children: ReactNode }) {
       setIsConfirmingOverwrite(true);
       return;
     }
-    runTranscription();
+    runTranscription(targets);
   };
 
   return (
@@ -133,7 +134,8 @@ export function TranscriptionProvider({ children }: { children: ReactNode }) {
         isConfirmingOverwrite,
         confirmOverwrite: () => {
           setIsConfirmingOverwrite(false);
-          runTranscription();
+          // 上書きの確認が出るのは、設定の対象(all)で実行したときだけ
+          runTranscription(findTargets(transcriptionSettings.targetMode));
         },
         cancelOverwrite: () => setIsConfirmingOverwrite(false),
         requestStop: () => setIsConfirmingStop(true),

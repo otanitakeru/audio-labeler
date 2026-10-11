@@ -6,11 +6,22 @@ type WaveformProps = {
   peakAmplitude: number;
   mainWaveformHeight: number;
   minimapHeight: number;
+  // 自動検出・文字起こしの実行中。枠の色を進み具合のボタンと揃えてゆっくり変える
+  isProcessing: boolean;
 };
 
-function Waveform({ containerRef, amplitudeAxisRef, peakAmplitude, mainWaveformHeight, minimapHeight }: WaveformProps) {
+function Waveform({
+  containerRef,
+  amplitudeAxisRef,
+  peakAmplitude,
+  mainWaveformHeight,
+  minimapHeight,
+  isProcessing,
+}: WaveformProps) {
   return (
-    <div className="flex min-h-25 gap-2 rounded-lg border border-gray-300 bg-white p-4">
+    <div
+      className={`flex min-h-25 gap-2 rounded-lg border border-gray-300 bg-white p-4 ${isProcessing ? "animate-border-pulse" : ""}`}
+    >
       <AmplitudeAxis
         ref={amplitudeAxisRef}
         peakAmplitude={peakAmplitude}

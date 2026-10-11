@@ -1,1 +1,13 @@
 @import "tailwindcss";
+
+@theme {
+  /* 自動検出・文字起こしの実行中に、進み具合のボタンと波形の枠の色を、元の色と黒の間でゆっくり行き来させる(animate-border-pulse)。
+     処理が動いていることを、進み具合が分からない前処理の間も含めてひと目で分かるようにするため */
+  --animate-border-pulse: border-pulse 1s ease-in-out infinite alternate;
+
+  @keyframes border-pulse {
+    to {
+      border-color: var(--color-gray-900);
+    }
+  }
+}

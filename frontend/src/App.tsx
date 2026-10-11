@@ -8,6 +8,7 @@ import { DisplaySettingsProvider } from "./hooks/useDisplaySettings";
 import { EditingSettingsProvider } from "./hooks/useEditingSettings";
 import { SegmentsProvider } from "./hooks/useSegments";
 import { ShortcutBindingsProvider } from "./hooks/useShortcutBindings";
+import { SpeechDetectionProvider } from "./hooks/useSpeechDetection";
 import { TranscriptionProvider } from "./hooks/useTranscription";
 import { TranscriptionSettingsProvider } from "./hooks/useTranscriptionSettings";
 import { useUnsavedChangesWarning } from "./hooks/useUnsavedChangesWarning";
@@ -58,15 +59,17 @@ function App() {
         <DisplaySettingsProvider>
           <ShortcutBindingsProvider>
             <VadSettingsProvider>
-              <TranscriptionSettingsProvider>
-                <TranscriptionProvider>
-                  <EditingSettingsProvider>
-                    <Router>
-                      <AppLayout />
-                    </Router>
-                  </EditingSettingsProvider>
-                </TranscriptionProvider>
-              </TranscriptionSettingsProvider>
+              <SpeechDetectionProvider>
+                <TranscriptionSettingsProvider>
+                  <TranscriptionProvider>
+                    <EditingSettingsProvider>
+                      <Router>
+                        <AppLayout />
+                      </Router>
+                    </EditingSettingsProvider>
+                  </TranscriptionProvider>
+                </TranscriptionSettingsProvider>
+              </SpeechDetectionProvider>
             </VadSettingsProvider>
           </ShortcutBindingsProvider>
         </DisplaySettingsProvider>

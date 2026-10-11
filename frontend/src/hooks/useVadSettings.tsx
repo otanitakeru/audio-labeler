@@ -7,10 +7,10 @@ const STORAGE_KEY = "audio-labeler.vadSettings";
 
 // 検出パラメータの初期値は、研究室で使ってきたspeech-splitter-with-vad(config/test/vad.yaml)に合わせる。
 // そこで指定していない項目はSilero VADの既定値
+// 既にある区間の扱いは、パラメータを変えて検出し直すときにそのまま使えるよう「すべて置き換える」を既定にする
+// (「残す」だと、前回の検出結果と重なって何も足されないため)
 export const DEFAULT_VAD_SETTINGS: VadSettings = {
-  existingSegmentsMode: "keepManual",
-  addDetectedAsConfirmed: false,
-  exportCandidates: true,
+  existingSegmentsMode: "replaceAll",
   samplingRate: 16000,
   threshold: 0.25,
   negThreshold: 0.25,
@@ -34,8 +34,14 @@ export function findVadSettingsError(settings: VadSettings): string | null {
 function loadSettings(): VadSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_VAD_SETTINGS;
     // 後から項目を増やしても、保存済みの設定に無い項目は初期値で補えるようにする
-    return raw ? { ...DEFAULT_VAD_SETTINGS, ...(JSON.parse(raw) as Partial<VadSettings>) } : DEFAULT_VAD_SETTINGS;
+    const settings: VadSettings = { ...DEFAULT_VAD_SETTINGS, ...(JSON.parse(raw) as Partial<VadSettings>) };
+    // 候補(区間の確定・未確定の区別)をなくす前に保存した設定には、今はない選択肢(keepManual)が残っているため初期値に戻す
+    if (settings.existingSegmentsMode !== "replaceAll" && settings.existingSegmentsMode !== "keepExisting") {
+      settings.existingSegmentsMode = DEFAULT_VAD_SETTINGS.existingSegmentsMode;
+    }
+    return settings;
   } catch {
     return DEFAULT_VAD_SETTINGS;
   }

@@ -51,6 +51,25 @@ class DetectedSpeechSegment(BaseModel):
     end_sec: float
 
 
+# 自動検出の進み具合は1行ずつ返す(NDJSON)。各行は次のいずれかで、typeで見分ける
+class SpeechDetectionProgress(BaseModel):
+    """検出の進み具合。前処理(モデルの読み込み・リサンプリング)が終わり、判定を始めてから返す"""
+
+    type: Literal["progress"] = "progress"
+    # 0〜100
+    percent: int
+    # 前の行から後に見つかった、発話らしさがしきい値を超えた部分。途中経過を波形に出すためのもので、
+    # 区間の切り出し(最短の発話・余白など)を当てはめる前の値なので、最後に返す区間とはずれる
+    speech_ranges: list[DetectedSpeechSegment]
+
+
+class SpeechDetectionResult(BaseModel):
+    """検出が終わった。最後の行になる"""
+
+    type: Literal["result"] = "result"
+    segments: list[DetectedSpeechSegment]
+
+
 class TranscriptionRange(BaseModel):
     start_sec: float = Field(ge=0)
     end_sec: float

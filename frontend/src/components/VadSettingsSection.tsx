@@ -4,8 +4,8 @@ import { DEFAULT_VAD_SETTINGS, findVadSettingsError } from "../hooks/useVadSetti
 import type { ExistingSegmentsMode, VadSettings } from "../types";
 
 const EXISTING_SEGMENTS_MODE_OPTIONS: { value: ExistingSegmentsMode; label: string }[] = [
-  { value: "keepManual", label: "確定済みは残し、候補だけ入れ替える" },
   { value: "replaceAll", label: "すべて置き換える" },
+  { value: "keepExisting", label: "残し、重ならない区間だけ足す" },
 ];
 
 const SAMPLING_RATE_OPTIONS: { value: VadSettings["samplingRate"]; label: string }[] = [
@@ -44,25 +44,6 @@ function VadSettingsSection({ settings, onChange }: VadSettingsSectionProps) {
             onSelect={() => update({ existingSegmentsMode: option.value })}
           />
         ))}
-      </SettingItem>
-
-      <SettingItem
-        title="検出した区間"
-        description="確定済みとして追加すると、次に検出したときも残ります。やり直すときは「すべて置き換える」にしてください。"
-      >
-        <Checkbox
-          checked={settings.addDetectedAsConfirmed}
-          label="確定済みとして追加する"
-          onChange={(addDetectedAsConfirmed) => update({ addDetectedAsConfirmed })}
-        />
-      </SettingItem>
-
-      <SettingItem title="書き出し" description="ラベルを書き出すときの、まだ確定していない候補の扱いです。">
-        <Checkbox
-          checked={settings.exportCandidates}
-          label="候補も含める"
-          onChange={(exportCandidates) => update({ exportCandidates })}
-        />
       </SettingItem>
 
       <h3 className="m-0 border-t border-gray-200 pt-5 text-lg font-semibold text-gray-900">検出</h3>

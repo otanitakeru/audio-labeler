@@ -2,23 +2,22 @@ type ProgressButtonProps = {
   label: string;
   // カーソルを当てたとき(キーボードでフォーカスしたときも)に、labelの代わりに出す文言。押すと行う操作を表す
   hoverLabel: string;
-  // 0〜1。nullは進み具合がまだ分からない間(モデルの読み込み中など)で、枠全体をゆっくり点滅させる
+  // 0〜1。nullは進み具合がまだ分からない間(モデルの読み込み中など)で、塗らない
   ratio: number | null;
   onClick: () => void;
 };
 
 // 処理中の表示を兼ねるボタン。Buttonと同じ大きさの枠に、進んだ分だけ左から色を塗っていく(件数などの文字を並べずに、
-// 進み具合をひと目で分かるようにするため)。カーソルを当てると押したときの操作(中止など)の文言に変わる
+// 進み具合をひと目で分かるようにするため)。処理中であることは、波形の枠と揃えて、枠線の色をゆっくり変えて示す。
+// カーソルを当てると押したときの操作(中止など)の文言に変わる
 function ProgressButton({ label, hoverLabel, ratio, onClick }: ProgressButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group relative cursor-pointer overflow-hidden rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:text-red-600 focus-visible:text-red-600"
+      className="group relative animate-border-pulse cursor-pointer overflow-hidden rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:text-red-600 focus-visible:text-red-600"
     >
-      {ratio === null ? (
-        <span className="absolute inset-0 animate-pulse bg-gray-100" />
-      ) : (
+      {ratio !== null && (
         <span
           className="absolute inset-y-0 left-0 bg-green-200 transition-[width] duration-500"
           style={{ width: `${ratio * 100}%` }}

@@ -14,7 +14,8 @@ type AppHeaderProps = {
 
 function AppHeader({ onOpenSettings }: AppHeaderProps) {
   const { uploadId, isUploading } = useAudioSession();
-  const { openAudioFile, isConfirmingDiscard, confirmDiscard, cancelDiscard } = useAudioFileOpener();
+  // 書き出していない変更の確認と読み込みのダイアログは、ホーム画面と共通でApp.tsxが出す
+  const { openAudioFile } = useAudioFileOpener();
   const {
     error: labelFileError,
     canExport,
@@ -25,7 +26,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
     confirmReplace,
     cancelReplace,
   } = useLabelFile();
-  // 自動検出・文字起こし中は結果を区間に入れるため、区間を入れ替える読み込みと、波形が変わる設定(チャンネルなど)は止める。
+  // 自動検出・文字起こし中は結果を区間に入れるため、区間を入れ替える読み込みと設定は止める。
   // 書き出しは区間を変えないので、文字起こしの途中までの結果でもできるようにしておく
   const { progress: detectionProgress } = useSpeechDetection();
   const { progress: transcriptionProgress } = useTranscription();
@@ -133,14 +134,6 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
         confirmLabel="置き換える"
         onConfirm={confirmReplace}
         onCancel={cancelReplace}
-      />
-      <ConfirmDialog
-        open={isConfirmingDiscard}
-        title="新規音声を読み込む"
-        message="書き出していないラベルは消えます。新しい音声を読み込みますか?"
-        confirmLabel="読み込む"
-        onConfirm={confirmDiscard}
-        onCancel={cancelDiscard}
       />
     </header>
   );

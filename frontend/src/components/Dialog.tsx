@@ -15,7 +15,12 @@ function Dialog({ open, title, onClose, children }: DialogProps) {
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // 開いたときは先頭の×ボタンにフォーカスが当たるため、Enterで進めたいダイアログは中身にdata-autofocusを付けてもらう
+      // (ReactのautoFocusは<dialog>が開く前に効いてしまうため使えない)
+      dialog.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
 

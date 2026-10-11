@@ -1,5 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { useAudioSession } from "./useAudioSession";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { sanitizeLabel, type LabeledRange } from "../formats/labelFormat";
 import type { ExistingSegmentsMode, Segment, SegmentDirection } from "../types";
 
@@ -17,6 +16,9 @@ type SegmentsState = {
   // 指定の区間と、時間軸上で隣の区間を1つにする(間の無音も含める)。隣の区間がなければ何もしない
   mergeWithAdjacentSegment: (id: string, direction: SegmentDirection) => void;
   replaceSegments: (ranges: LabeledRange[]) => SegmentMutationResult;
+  // 新しい音声を読み込んだときに呼び、区間と履歴を作り直す。前の音声の区間(と、前の音声に戻ってしまう履歴)を残さないため。
+  // 読み込みのダイアログで選んだラベル(検証済み)を、書き出し済みの状態として入れる
+  resetSegments: (initialRanges: LabeledRange[]) => void;
   applyDetectedSegments: (
     ranges: Pick<Segment, "startSec" | "endSec">[],
     mode: ExistingSegmentsMode,
@@ -68,6 +70,22 @@ function findRangeError(
   return null;
 }
 
+// 区間の一覧をまとめて入れられるか検証する(ラベルファイルの読み込み・自動検出のreplaceAll)。エラーがあればメッセージを返す
+export function findLabeledRangesError(ranges: Pick<Segment, "startSec" | "endSec">[]): string | null {
+  const sorted = [...ranges].sort((a, b) => a.startSec - b.startSec);
+  for (let i = 0; i < sorted.length; i++) {
+    const { startSec, endSec } = sorted[i];
+    // 開始順に並べてあり、手前の区間同士は検証済みのため、重なりうるのは直前の区間だけ
+    const error = findRangeError(startSec, endSec, i > 0 ? [sorted[i - 1]] : []);
+    if (error) return `${startSec}〜${endSec}秒の区間: ${error}`;
+  }
+  return null;
+}
+
+function toSortedSegments(ranges: LabeledRange[]): Segment[] {
+  return [...ranges].sort((a, b) => a.startSec - b.startSec).map((r) => ({ ...r, id: crypto.randomUUID() }));
+}
+
 // 時間軸上で隣の区間を返す。区間は追加順に並んでいるため、開始時刻順に並べ直して探す。
 // 結合する相手と、キーボードで選択を移す先が食い違わないよう、「隣」の判定はここに揃える
 export function findAdjacentSegment(segments: Segment[], id: string, direction: SegmentDirection): Segment | undefined {
@@ -80,16 +98,8 @@ export function findAdjacentSegment(segments: Segment[], id: string, direction: 
 const SegmentsContext = createContext<SegmentsState | null>(null);
 
 export function SegmentsProvider({ children }: { children: ReactNode }) {
-  const { uploadId } = useAudioSession();
   const [history, setHistory] = useState<SegmentsHistory>(EMPTY_HISTORY);
   const segments = history.present;
-
-  // 編集画面だけでなくヘッダー(ラベルの読み込み・書き出し)からも使うため、状態をルーターの外側
-  // (このProvider)に置いている。そのため新しい音声ファイルが読み込まれたときだけ、
-  // 前のファイルの区間(と、前のファイルに戻ってしまう履歴)が残らないよう明示的にリセットする
-  useEffect(() => {
-    setHistory(EMPTY_HISTORY);
-  }, [uploadId]);
 
   // 区間を変更する操作はすべてここを通し、変更前の状態を履歴に積む(新しい操作をしたらやり直しの履歴は捨てる)。
   // 直前の変更と同じgroupKeyなら、履歴は積まずに現在の状態だけを差し替えて1つの操作にまとめる。
@@ -191,15 +201,17 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
   // 全区間を入れ替える(ラベルファイルのインポート、自動検出のreplaceAll)。
   // 1件でも不正があれば何も変更しない(途中まで読み込まれた状態を作らないため)
   function replaceSegments(ranges: LabeledRange[]): SegmentMutationResult {
-    const sorted = [...ranges].sort((a, b) => a.startSec - b.startSec);
-    for (let i = 0; i < sorted.length; i++) {
-      const { startSec, endSec } = sorted[i];
-      // 開始順に並べてあり、手前の区間同士は検証済みのため、重なりうるのは直前の区間だけ
-      const error = findRangeError(startSec, endSec, i > 0 ? [sorted[i - 1]] : []);
-      if (error) return { success: false, error: `${startSec}〜${endSec}秒の区間: ${error}` };
-    }
-    commitSegments(() => sorted.map((r) => ({ ...r, id: crypto.randomUUID() })));
+    const error = findLabeledRangesError(ranges);
+    if (error) return { success: false, error };
+    commitSegments(() => toSortedSegments(ranges));
     return { success: true };
+  }
+
+  // 編集画面だけでなくヘッダー(ラベルの読み込み・書き出し)からも使うため、状態をルーターの外側(このProvider)に置いている。
+  // そのため新しい音声を読み込むときは、音声の切り替えと同時に呼んでもらう(effectで後から消すと、入れたラベルまで消えてしまう)
+  function resetSegments(initialRanges: LabeledRange[]): void {
+    const initial = initialRanges.length === 0 ? NO_SEGMENTS : toSortedSegments(initialRanges);
+    setHistory({ ...EMPTY_HISTORY, present: initial, saved: initial });
   }
 
   // 自動検出の結果を反映する。ラベルは空のまま(人が確認して入力するか、文字起こしで埋める)
@@ -257,6 +269,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
         removeSegment,
         mergeWithAdjacentSegment,
         replaceSegments,
+        resetSegments,
         applyDetectedSegments,
         applyTranscribedLabel,
         undo,

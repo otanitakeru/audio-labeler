@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LabelFormatError, parseLabels, serializeLabels, type LabeledRange } from "../formats/labelFormat";
 import { useAudioSession } from "./useAudioSession";
-import { useSegments } from "./useSegments";
+import { findLabeledRangesError, useSegments } from "./useSegments";
 
 type LabelFileState = {
   error: string | null;
@@ -24,6 +24,23 @@ declare global {
   }
 }
 
+type LabelFileReadResult = { success: true; ranges: LabeledRange[] } | { success: false; error: string };
+
+// ラベルファイルを読み、区間として入れられるかまで検証する(ヘッダーからの読み込みと、音声の読み込みのダイアログで使う)。
+// 壊れたファイルで置き換えの確認を出したり、読み込みのダイアログを閉じたりしないよう、入れる前に検証を済ませる
+export async function readLabelFile(file: File): Promise<LabelFileReadResult> {
+  let ranges;
+  try {
+    ranges = parseLabels(await file.text());
+  } catch (e) {
+    if (!(e instanceof LabelFormatError)) throw e;
+    return { success: false, error: `ラベルを読み込めませんでした。${e.message}` };
+  }
+  const error = findLabeledRangesError(ranges);
+  if (error) return { success: false, error: `ラベルを読み込めませんでした。${error}` };
+  return { success: true, ranges };
+}
+
 export function useLabelFile(): LabelFileState {
   const { filename } = useAudioSession();
   const { segments, replaceSegments, markSegmentsSaved } = useSegments();
@@ -40,24 +57,18 @@ export function useLabelFile(): LabelFileState {
     markSegmentsSaved();
   };
 
-  // 壊れたファイルで置き換えの確認を出さないよう、形式の検証を先に行ってから確認する
   const importLabelFile = async (file: File): Promise<void> => {
     setError(null);
-
-    let ranges;
-    try {
-      ranges = parseLabels(await file.text());
-    } catch (e) {
-      if (!(e instanceof LabelFormatError)) throw e;
-      setError(`ラベルを読み込めませんでした。${e.message}`);
+    const result = await readLabelFile(file);
+    if (!result.success) {
+      setError(result.error);
       return;
     }
-
     if (segments.length > 0) {
-      setPendingRanges(ranges);
+      setPendingRanges(result.ranges);
       return;
     }
-    applyRanges(ranges);
+    applyRanges(result.ranges);
   };
 
   const confirmReplace = () => {

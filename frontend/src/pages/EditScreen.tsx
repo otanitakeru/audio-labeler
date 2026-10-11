@@ -5,6 +5,7 @@ import AlertDialog from "../components/AlertDialog";
 import AudioFileDetails from "../components/AudioFileDetails";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
+import ProgressButton from "../components/ProgressButton";
 import TransportControls from "../components/TransportControls";
 import Waveform from "../components/Waveform";
 import { useAudioSession } from "../hooks/useAudioSession";
@@ -13,6 +14,7 @@ import { useEditingSettings } from "../hooks/useEditingSettings";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useSegments } from "../hooks/useSegments";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
+import { useTranscription } from "../hooks/useTranscription";
 import { useWavesurfer } from "../hooks/useWavesurfer";
 
 function EditScreen() {
@@ -46,6 +48,21 @@ function EditScreen() {
   const [error, setError] = useState<string | null>(null);
   const { isDetecting, requestDetection, isConfirmingReplaceAll, confirmReplaceAll, cancelReplaceAll } =
     useSpeechDetection(setError);
+  const {
+    progress: transcriptionProgress,
+    requestTranscription,
+    isConfirmingOverwrite,
+    confirmOverwrite,
+    cancelOverwrite,
+    requestStop,
+    isConfirmingStop,
+    confirmStop,
+    dismissStop,
+    error: transcriptionError,
+    clearError: clearTranscriptionError,
+  } = useTranscription();
+  // 文字起こし中は結果を区間に入れていくため、編集・再生を止める。表示位置の移動(スクロール・拡大縮小)だけはできる(PLAN.md 5章)
+  const isTranscribing = transcriptionProgress !== null;
 
   useEffect(() => {
     if (!uploadId) navigate("/", { replace: true });
@@ -89,25 +106,30 @@ function EditScreen() {
     playbackScrollMode,
     segmentNudgeStepMs: editingSettings.segmentNudgeStepMs,
     amplitudeAxisRef,
+    editingLocked: isTranscribing,
+    highlightedSegmentId: transcriptionProgress?.currentSegmentId ?? null,
   });
 
-  useKeyboardShortcuts({
-    togglePlay,
-    labelSelection: startLabelingSelection,
-    deleteSelectedSegment,
-    deselectSegment,
-    selectPreviousSegment: () => selectAdjacentSegment("previous"),
-    selectNextSegment: () => selectAdjacentSegment("next"),
-    editSegmentLabel: editSelectedSegmentLabel,
-    undo,
-    redo,
-    mergeWithPreviousSegment: () => mergeSelectedSegment("previous"),
-    mergeWithNextSegment: () => mergeSelectedSegment("next"),
-    nudgeSegmentStartLeft: (e) => nudgeSelectedSegment("start", "left", e.repeat),
-    nudgeSegmentStartRight: (e) => nudgeSelectedSegment("start", "right", e.repeat),
-    nudgeSegmentEndLeft: (e) => nudgeSelectedSegment("end", "left", e.repeat),
-    nudgeSegmentEndRight: (e) => nudgeSelectedSegment("end", "right", e.repeat),
-  });
+  useKeyboardShortcuts(
+    {
+      togglePlay,
+      labelSelection: startLabelingSelection,
+      deleteSelectedSegment,
+      deselectSegment,
+      selectPreviousSegment: () => selectAdjacentSegment("previous"),
+      selectNextSegment: () => selectAdjacentSegment("next"),
+      editSegmentLabel: editSelectedSegmentLabel,
+      undo,
+      redo,
+      mergeWithPreviousSegment: () => mergeSelectedSegment("previous"),
+      mergeWithNextSegment: () => mergeSelectedSegment("next"),
+      nudgeSegmentStartLeft: (e) => nudgeSelectedSegment("start", "left", e.repeat),
+      nudgeSegmentStartRight: (e) => nudgeSelectedSegment("start", "right", e.repeat),
+      nudgeSegmentEndLeft: (e) => nudgeSelectedSegment("end", "left", e.repeat),
+      nudgeSegmentEndRight: (e) => nudgeSelectedSegment("end", "right", e.repeat),
+    },
+    isTranscribing,
+  );
 
   if (!uploadId) return null;
 
@@ -121,15 +143,45 @@ function EditScreen() {
       <div className="flex items-center justify-between gap-3">
         {/* 読み込み中も表示しておき(操作のみ無効化)、読み込み完了時に波形の位置がずれないようにする */}
         <TransportControls
-          disabled={!isReady || isUploading}
+          disabled={!isReady || isUploading || isTranscribing}
           isPlaying={isPlaying}
           currentTime={currentTime}
           duration={duration}
           onTogglePlay={togglePlay}
         />
-        <Button variant="secondary" onClick={requestDetection} disabled={!isReady || isUploading || isDetecting}>
-          {isDetecting ? "検出中..." : "自動検出"}
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="secondary"
+            onClick={requestDetection}
+            disabled={!isReady || isUploading || isDetecting || isTranscribing}
+          >
+            {isDetecting ? "検出中..." : "自動検出"}
+          </Button>
+          {transcriptionProgress ? (
+            <ProgressButton
+              label={transcriptionProgress.phase === "loadingModel" ? "モデル読み込み中" : "処理中"}
+              hoverLabel="中止"
+              ratio={
+                transcriptionProgress.phase === "loadingModel"
+                  ? null
+                  : transcriptionProgress.done / transcriptionProgress.total
+              }
+              onClick={requestStop}
+            />
+          ) : (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                // 文字起こし中は再生ボタン・ショートカットを止めていて再生を止められないため、先に止めておく
+                if (isPlaying) togglePlay();
+                requestTranscription();
+              }}
+              disabled={!isReady || isUploading || isDetecting}
+            >
+              文字起こし
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="relative">
@@ -159,6 +211,7 @@ function EditScreen() {
       </div>
 
       <AlertDialog message={error} onClose={() => setError(null)} />
+      <AlertDialog message={transcriptionError} onClose={clearTranscriptionError} />
       {/* ヘッダーから読み込んだ音声のエラー。ホーム画面では入力欄の下に出しているが、編集画面には表示する場所がないためダイアログで出す */}
       <AlertDialog message={uploadError} onClose={clearUploadError} />
       <ConfirmDialog
@@ -168,6 +221,22 @@ function EditScreen() {
         confirmLabel="置き換える"
         onConfirm={confirmReplaceAll}
         onCancel={cancelReplaceAll}
+      />
+      <ConfirmDialog
+        open={isConfirmingOverwrite}
+        title="文字起こし"
+        message="確定済みのラベルも、文字起こしの結果で書き直しますか?"
+        confirmLabel="書き直す"
+        onConfirm={confirmOverwrite}
+        onCancel={cancelOverwrite}
+      />
+      <ConfirmDialog
+        open={isConfirmingStop}
+        title="文字起こし"
+        message="中止しますか?終わった区間のラベルは残ります。"
+        confirmLabel="中止する"
+        onConfirm={confirmStop}
+        onCancel={dismissStop}
       />
     </div>
   );

@@ -3,6 +3,7 @@ import Button from "./Button";
 import ChannelInput from "./ChannelInput";
 import NumberInput from "./NumberInput";
 import ShortcutBindingRow from "./ShortcutBindingRow";
+import TranscriptionSettingsSection from "./TranscriptionSettingsSection";
 import VadSettingsSection from "./VadSettingsSection";
 import { useAudioSession } from "../hooks/useAudioSession";
 import {
@@ -21,6 +22,7 @@ import {
   useEditingSettings,
 } from "../hooks/useEditingSettings";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
+import { findTranscriptionSettingsError, useTranscriptionSettings } from "../hooks/useTranscriptionSettings";
 import { findVadSettingsError, useVadSettings } from "../hooks/useVadSettings";
 import { SHORTCUT_CATALOG, SHORTCUT_GROUPS } from "../shortcuts/catalog";
 import type { PlaybackScrollMode } from "../types";
@@ -31,7 +33,7 @@ const PLAYBACK_SCROLL_MODE_OPTIONS: { value: PlaybackScrollMode; label: string }
   { value: "none", label: "動かさない" },
 ];
 
-const CATEGORIES = ["音声読み込み", "表示設定", "編集", "自動検出", "ショートカットキー"] as const;
+const CATEGORIES = ["音声読み込み", "表示設定", "編集", "自動検出", "文字起こし", "ショートカットキー"] as const;
 type Category = (typeof CATEGORIES)[number];
 
 type SettingsPanelProps = {
@@ -54,6 +56,7 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { bindings, setBindings } = useShortcutBindings();
   const { vadSettings, setVadSettings } = useVadSettings();
   const { editingSettings, setEditingSettings } = useEditingSettings();
+  const { transcriptionSettings, setTranscriptionSettings } = useTranscriptionSettings();
 
   const [draftChannel, setDraftChannel] = useState(channel);
   const [draftMainWaveformHeight, setDraftMainWaveformHeight] = useState(mainWaveformHeight);
@@ -62,9 +65,15 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [draftBindings, setDraftBindings] = useState(bindings);
   const [draftVadSettings, setDraftVadSettings] = useState(vadSettings);
   const [draftEditingSettings, setDraftEditingSettings] = useState(editingSettings);
+  const [draftTranscriptionSettings, setDraftTranscriptionSettings] = useState(transcriptionSettings);
 
   const draftChannelOutOfRange = uploadId !== null && draftChannel >= channelCount;
   const vadSettingsError = findVadSettingsError(draftVadSettings);
+  const transcriptionSettingsError = findTranscriptionSettingsError(draftTranscriptionSettings);
+  // 別のカテゴリを開いていてもOKが押せない理由が分かるよう、下のボタンの横にも出す
+  const settingsError = vadSettingsError
+    ? `自動検出: ${vadSettingsError}`
+    : transcriptionSettingsError && `文字起こし: ${transcriptionSettingsError}`;
 
   const applyAndClose = () => {
     setChannel(draftChannel);
@@ -74,6 +83,7 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
     setBindings(draftBindings);
     setVadSettings(draftVadSettings);
     setEditingSettings(draftEditingSettings);
+    setTranscriptionSettings(draftTranscriptionSettings);
     onClose();
   };
 
@@ -220,6 +230,13 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
 
         {category === "自動検出" && <VadSettingsSection settings={draftVadSettings} onChange={setDraftVadSettings} />}
 
+        {category === "文字起こし" && (
+          <TranscriptionSettingsSection
+            settings={draftTranscriptionSettings}
+            onChange={setDraftTranscriptionSettings}
+          />
+        )}
+
         {category === "ショートカットキー" && (
           <div className="flex flex-1 flex-col gap-6 overflow-y-auto">
             <h2 className="m-0 text-xl font-semibold text-gray-900">ショートカットキー</h2>
@@ -244,12 +261,11 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
       </div>
 
       <div className="flex items-center justify-end gap-3 border-t border-gray-300 pt-4">
-        {/* 別のカテゴリを開いていてもOKが押せない理由が分かるよう、ここにも出す */}
-        {vadSettingsError && <p className="m-0 mr-auto text-sm text-red-600">自動検出: {vadSettingsError}</p>}
+        {settingsError && <p className="m-0 mr-auto text-sm text-red-600">{settingsError}</p>}
         <Button variant="secondary" onClick={onClose}>
           キャンセル
         </Button>
-        <Button variant="primary" onClick={applyAndClose} disabled={vadSettingsError !== null}>
+        <Button variant="primary" onClick={applyAndClose} disabled={settingsError !== null}>
           OK
         </Button>
       </div>

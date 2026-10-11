@@ -5,6 +5,12 @@ export type LabeledRange = Pick<Segment, "startSec" | "endSec" | "label">;
 
 export class LabelFormatError extends Error {}
 
+// タブ・改行は出力フォーマット(タブ区切り)を壊すため半角スペースに置き換える。
+// 手入力(contentEditableへの貼り付けで混入しうる)と文字起こしの結果の両方で、区間に入れる前に必ず通す
+export function sanitizeLabel(text: string): string {
+  return text.replace(/[\t\n\r]/g, " ");
+}
+
 export function parseLabels(text: string): LabeledRange[] {
   const ranges: LabeledRange[] = [];
   text.split("\n").forEach((rawLine, index) => {

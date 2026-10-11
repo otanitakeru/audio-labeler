@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAudioFileOpener } from "../hooks/useAudioFileOpener";
 import { useAudioSession } from "../hooks/useAudioSession";
 import { useLabelFile } from "../hooks/useLabelFile";
+import { useTranscription } from "../hooks/useTranscription";
 import AlertDialog from "./AlertDialog";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -23,6 +24,9 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
     confirmReplace,
     cancelReplace,
   } = useLabelFile();
+  // 文字起こし中は結果を区間に入れていくため、区間を入れ替える読み込みと、波形が変わる設定(チャンネルなど)は止める。
+  // 書き出しは区間を変えないので、途中までの結果でもできるようにしておく
+  const isTranscribing = useTranscription().progress !== null;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -53,13 +57,17 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
 
           {isMenuOpen && (
             <div className="absolute left-0 top-full z-10 mt-1 w-56 rounded-md border border-gray-300 bg-white py-1 shadow-md">
-              <label className="block cursor-pointer px-3 py-2 text-sm text-gray-900 hover:bg-gray-100">
+              <label
+                className={`block px-3 py-2 text-sm ${
+                  isTranscribing ? "text-gray-400" : "cursor-pointer text-gray-900 hover:bg-gray-100"
+                }`}
+              >
                 {isUploading ? "読み込み中..." : "新規音声を読み込む"}
                 <input
                   type="file"
                   accept=".wav,audio/wav"
                   className="hidden"
-                  disabled={isUploading}
+                  disabled={isUploading || isTranscribing}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     setIsMenuOpen(false);
@@ -71,7 +79,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
 
               <label
                 className={`block px-3 py-2 text-sm ${
-                  uploadId ? "cursor-pointer text-gray-900 hover:bg-gray-100" : "text-gray-400"
+                  uploadId && !isTranscribing ? "cursor-pointer text-gray-900 hover:bg-gray-100" : "text-gray-400"
                 }`}
               >
                 ラベルを読み込む
@@ -79,7 +87,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
                   type="file"
                   accept=".txt,.tsv,text/plain"
                   className="hidden"
-                  disabled={!uploadId}
+                  disabled={!uploadId || isTranscribing}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     setIsMenuOpen(false);
@@ -107,7 +115,8 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
         <button
           type="button"
           onClick={onOpenSettings}
-          className="rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
+          disabled={isTranscribing}
+          className="rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-transparent"
         >
           設定
         </button>

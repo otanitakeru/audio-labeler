@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useAudioSession } from "./useAudioSession";
-import type { LabeledRange } from "../formats/labelFormat";
+import { sanitizeLabel, type LabeledRange } from "../formats/labelFormat";
 import type { ExistingSegmentsMode, Segment, SegmentDirection } from "../types";
 
 type SegmentMutationResult = { success: true } | { success: false; error: string };
@@ -22,7 +22,10 @@ type SegmentsState = {
     mode: ExistingSegmentsMode,
     source: Segment["source"],
   ) => SegmentMutationResult;
-  // 区間に対する変更(追加・ラベル編集・位置変更・削除・読み込み・自動検出)を1操作ずつ取り消す/やり直す。
+  // 文字起こしの結果をラベルとして入れる。
+  // 1回の実行では同じhistoryGroupKeyを渡し、届いた順に入れた結果を履歴上1つの操作にまとめる
+  applyTranscribedLabel: (id: string, label: string, historyGroupKey: string) => void;
+  // 区間に対する変更(追加・ラベル編集・位置変更・削除・読み込み・自動検出・文字起こし)を1操作ずつ取り消す/やり直す。
   // 取り消す/やり直す操作がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   undo: () => boolean;
   redo: () => boolean;
@@ -90,14 +93,17 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
   }, [uploadId]);
 
   // 区間を変更する操作はすべてここを通し、変更前の状態を履歴に積む(新しい操作をしたらやり直しの履歴は捨てる)。
-  // 直前の変更と同じgroupKeyなら、履歴は積まずに現在の状態だけを差し替えて1つの操作にまとめる
+  // 直前の変更と同じgroupKeyなら、履歴は積まずに現在の状態だけを差し替えて1つの操作にまとめる。
+  // updateが同じ配列を返したら何も変わっていないとみなし、履歴に積まない(空振りの操作で元に戻す回数や未保存の判定が狂わないように)
   function commitSegments(update: (prev: Segment[]) => Segment[], groupKey?: string): void {
     setHistory((h) => {
+      const next = update(h.present);
+      if (next === h.present) return h;
       const continuesGroup = groupKey !== undefined && groupKey === h.lastGroupKey;
       return {
         ...h,
         past: continuesGroup ? h.past : [...h.past, h.present].slice(-MAX_HISTORY_LENGTH),
-        present: update(h.present),
+        present: next,
         future: [],
         lastGroupKey: groupKey ?? null,
       };
@@ -224,6 +230,19 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
     return { success: true };
   }
 
+  // 結果は届いた順に1件ずつ入れるが、同じhistoryGroupKeyでまとめるため、1回の実行分を元に戻す1回で戻せる。
+  // sourceは変えない。候補に戻すと、次の自動検出(keepManual)で人が決めた区間が消えてしまうため(PLAN.md 5章)
+  // 文字起こし中は区間の編集を止めているため、実行を始めた時点の区間にそのまま入れてよい
+  function applyTranscribedLabel(id: string, label: string, historyGroupKey: string): void {
+    const sanitized = sanitizeLabel(label);
+    // 文言が変わらないときは元の配列を返して履歴に積まない(まとまりも切らない)
+    commitSegments((prev) => {
+      const current = prev.find((s) => s.id === id);
+      if (!current || current.label === sanitized) return prev;
+      return prev.map((s) => (s.id === id ? { ...s, label: sanitized } : s));
+    }, historyGroupKey);
+  }
+
   // 直前に積まれた変更(読み込み直後の置き換えなど)の後の状態を記録するため、関数形式で更新する
   function markSegmentsSaved(): void {
     setHistory((h) => ({ ...h, saved: h.present }));
@@ -241,6 +260,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
         mergeWithAdjacentSegment,
         replaceSegments,
         applyDetectedSegments,
+        applyTranscribedLabel,
         undo,
         redo,
         hasUnsavedChanges: history.present !== history.saved,

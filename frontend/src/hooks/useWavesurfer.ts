@@ -3,6 +3,7 @@ import WaveSurfer from "wavesurfer.js";
 import Minimap from "wavesurfer.js/plugins/minimap";
 import RegionsPlugin, { type Region } from "wavesurfer.js/plugins/regions";
 import { findAdjacentSegment } from "./useSegments";
+import { sanitizeLabel } from "../formats/labelFormat";
 import type { PlaybackScrollMode, Segment, SegmentDirection } from "../types";
 
 // メイン波形を拡大表示する際の1秒あたりの初期ピクセル数(全体はMinimapで確認する)
@@ -49,6 +50,26 @@ const SEGMENT_COLORS: Record<Segment["source"], SegmentColors> = {
     minimap: "rgba(107, 114, 128, 0.35)",
   },
 };
+// 文字起こしで処理中の区間の配色。確定済み(青)・候補(灰色)のどちらとも見分けられるよう緑にし、
+// 選択中の区間と同じくらい塗りを濃くして目立たせる
+const HIGHLIGHTED_SEGMENT_COLORS: SegmentColors = {
+  region: "rgba(22, 163, 74, 0.25)",
+  activeRegion: "rgba(22, 163, 74, 0.25)",
+  labelBackground: "rgba(240, 253, 244, 0.95)",
+  labelBorder: "#16a34a",
+  minimap: "rgba(22, 163, 74, 0.45)",
+};
+// 編集を止めている間(文字起こし中)は、出どころによらず処理中の区間(highlightedSegmentId)だけを緑、他を灰色にする。
+// 候補・確定の色分けのままだと、どこを処理しているかが分からないため
+function getSegmentColors(
+  segment: Segment,
+  editingLocked: boolean,
+  highlightedSegmentId: string | null,
+): SegmentColors {
+  if (!editingLocked) return SEGMENT_COLORS[segment.source];
+  return segment.id === highlightedSegmentId ? HIGHLIGHTED_SEGMENT_COLORS : SEGMENT_COLORS.auto;
+}
+
 // ラベル文言を表示・編集する帯の高さ(px)。「波形の下側にラベルを書く」という見た目にするため、
 // 区間(Region)自体は波形+ラベル領域の全高を使いつつ、テキストはこの帯にだけ配置する
 const LABEL_BAR_HEIGHT_PX = 40;
@@ -96,12 +117,6 @@ function getPeakAmplitude(audioBuffer: AudioBuffer | null): number {
     }
   }
   return peak;
-}
-
-// タブ・改行は出力フォーマット(タブ区切り)を壊すため半角スペースに置き換える。
-// contentEditableには貼り付けでこれらが混入しうるため、確定時に必ず通す
-function sanitizeLabel(text: string): string {
-  return text.replace(/[\t\n\r]/g, " ");
 }
 
 // contentEditable要素にフォーカスし、キャレットを末尾に置く
@@ -362,6 +377,10 @@ type UseWavesurferOptions = {
   segmentNudgeStepMs: number;
   // 縦の目盛り(AmplitudeAxis)上でのCmd/Ctrl+スクロールをverticalZoomに反映するための参照
   amplitudeAxisRef: React.RefObject<HTMLDivElement | null>;
+  // trueの間(文字起こし中)は、波形・ラベル領域での選択・編集・シークを止める。表示位置の移動(ホイール・全体波形)はできる
+  editingLocked: boolean;
+  // editingLockedの間、青で目立たせる区間(文字起こし中の区間)
+  highlightedSegmentId: string | null;
 };
 
 type UseWavesurferResult = {
@@ -405,6 +424,8 @@ export function useWavesurfer(
     playbackScrollMode,
     segmentNudgeStepMs,
     amplitudeAxisRef,
+    editingLocked,
+    highlightedSegmentId,
   }: UseWavesurferOptions,
 ): UseWavesurferResult {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -432,6 +453,11 @@ export function useWavesurfer(
   onMergeSegmentRef.current = onMergeSegment;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  // 区間は作り直さず配色だけ差し替えるため、区間ごとのupdateから最新の値を参照できるようrefに控える
+  const editingLockedRef = useRef(editingLocked);
+  editingLockedRef.current = editingLocked;
+  const highlightedSegmentIdRef = useRef(highlightedSegmentId);
+  highlightedSegmentIdRef.current = highlightedSegmentId;
   // 生成時に参照するだけで、変更は下のeffectでsetOptionsにより反映する(波形を作り直さないため)
   const playbackScrollModeRef = useRef(playbackScrollMode);
   playbackScrollModeRef.current = playbackScrollMode;
@@ -639,8 +665,11 @@ export function useWavesurfer(
       // 区間は作り直さないため、ラベルの比較・復元には生成時点ではなく常に最新の値を使う
       const getCurrentLabel = () => segmentsRef.current.find((s) => s.id === id)?.label ?? "";
 
-      // 候補(auto)がラベル入力・位置調整で確定(manual)に変わったときは、区間を作り直さず配色だけ切り替える
-      let colors = SEGMENT_COLORS[segment.source];
+      // 候補(auto)がラベル入力・位置調整で確定(manual)に変わったとき・文字起こしで処理中の区間が移ったときは、
+      // 区間を作り直さず配色だけ切り替える
+      const getColors = (latest: Segment) =>
+        getSegmentColors(latest, editingLockedRef.current, highlightedSegmentIdRef.current);
+      let colors = getColors(segment);
       const content = createLabelContent(segment.label, colors.labelBackground, colors.labelBorder);
       content.style.cursor = "pointer";
       const region = regions.addRegion({
@@ -704,10 +733,10 @@ export function useWavesurfer(
         adjustBar.setActive(true);
         region.setOptions({ color: colors.activeRegion });
       };
-      // 区間は作り直さないため、同じIDのまま中身が変わったとき(候補の確定、元に戻す/やり直す)はここで見た目に反映する。
-      // 移動・幅変更・ラベル編集の直後は見た目が既に最新なので、値が変わったときだけ触る
+      // 区間は作り直さないため、同じIDのまま中身が変わったとき(候補の確定、元に戻す/やり直す、文字起こしの進行)は
+      // ここで見た目に反映する。移動・幅変更・ラベル編集の直後は見た目が既に最新なので、値が変わったときだけ触る
       const update = (latest: Segment) => {
-        colors = SEGMENT_COLORS[latest.source];
+        colors = getColors(latest);
         setLabelContentColors(content, colors.labelBackground, colors.labelBorder);
         region.setOptions({ color: activeSegmentRef.current?.id === id ? colors.activeRegion : colors.region });
         if (region.start !== latest.startSec || region.end !== latest.endSec) {
@@ -757,7 +786,8 @@ export function useWavesurfer(
         if (label !== getCurrentLabel()) onUpdateLabelRef.current(id, label);
       });
     }
-  }, [segments, isReady]);
+    // 文字起こしの開始・終了、処理中の区間の移り変わりでも配色を更新するため、区間が変わらなくても走らせる
+  }, [segments, isReady, editingLocked, highlightedSegmentId]);
 
   // 全体波形の上に確定済み区間の範囲を表示する。数が多くても描き直しは軽いため、区間が変わるたびに全て作り直す
   useEffect(() => {
@@ -772,12 +802,30 @@ export function useWavesurfer(
           "bottom:0",
           `left:${(segment.startSec / duration) * 100}%`,
           `width:${((segment.endSec - segment.startSec) / duration) * 100}%`,
-          `background:${SEGMENT_COLORS[segment.source].minimap}`,
+          `background:${getSegmentColors(segment, editingLocked, highlightedSegmentId).minimap}`,
         ].join(";");
         return bar;
       }),
     );
-  }, [segments, isReady, duration]);
+  }, [segments, isReady, duration, editingLocked, highlightedSegmentId]);
+
+  // 編集を止めている間は、波形・ラベル領域での押す操作(シーク・ドラッグ選択・区間の選択・調整・文言の編集)を
+  // 波形に届く前のキャプチャフェーズで止める。ホイールは止めないため、スクロール・拡大縮小はできる。
+  // 全体波形のドラッグも表示位置を動かすだけなので通す。止める前に選択も外し、処理中の区間の色と紛れないようにする
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !editingLocked) return;
+    activeSegmentRef.current?.deactivate();
+    clearSelectionRegion();
+    const blockPointer = (e: Event) => {
+      if (minimapElementRef.current && e.composedPath().includes(minimapElementRef.current)) return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    const blockedEvents = ["pointerdown", "click", "dblclick"] as const;
+    blockedEvents.forEach((type) => container.addEventListener(type, blockPointer, { capture: true }));
+    return () => blockedEvents.forEach((type) => container.removeEventListener(type, blockPointer, { capture: true }));
+  }, [containerRef, editingLocked]);
 
   // 再生中の表示位置の動かし方は、波形を作り直さずに設定だけ差し替える(作り直すと音声の再取得・表示位置のリセットが起きるため)
   useEffect(() => {

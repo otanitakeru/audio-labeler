@@ -15,6 +15,7 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useSegments } from "../hooks/useSegments";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useTranscription } from "../hooks/useTranscription";
+import { useViewOptions } from "../hooks/useViewOptions";
 import { useWavesurfer } from "../hooks/useWavesurfer";
 import type { Segment } from "../types";
 
@@ -48,6 +49,7 @@ function EditScreen() {
   } = useSegments();
   const { mainWaveformHeight, minimapHeight, playbackScrollMode } = useDisplaySettings();
   const { editingSettings } = useEditingSettings();
+  const { viewOptions } = useViewOptions();
   const [error, setError] = useState<string | null>(null);
   const {
     progress: detectionProgress,
@@ -124,6 +126,7 @@ function EditScreen() {
     highlightedSegmentId: transcriptionProgress?.currentSegmentId ?? null,
     processedSegmentIds: transcriptionProgress?.processedSegmentIds ?? NO_SEGMENT_IDS,
     detectionPreviewRanges: detectionProgress?.speechRanges ?? NO_RANGES,
+    highlightUnlabeledSegments: viewOptions.highlightUnlabeledSegments,
   });
 
   useKeyboardShortcuts(

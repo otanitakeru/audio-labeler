@@ -16,6 +16,12 @@ export type Segment = {
   label: string;
 };
 
+// ヘッダーの「表示」メニューで切り替える、編集画面の表示のオン/オフ
+export type ViewOptions = {
+  // ラベルが空の区間を、ラベルがある区間と違う色にする(どこに未入力が残っているかを見つけやすくするため)
+  highlightUnlabeledSegments: boolean;
+};
+
 // 時間軸上で隣の区間を指す向き(前の区間との結合、次の区間の選択など)
 export type SegmentDirection = "previous" | "next";
 

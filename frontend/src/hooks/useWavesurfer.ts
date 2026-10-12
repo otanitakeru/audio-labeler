@@ -65,6 +65,15 @@ const HIGHLIGHTED_SEGMENT_COLORS: SegmentColors = {
   labelBorder: "#15803d",
   minimap: "rgba(22, 163, 74, 0.7)",
 };
+// ヘッダーの「表示」で色分けをオンにしたときの、ラベルが空の区間の配色。普段の青・実行中の灰色・処理済みの緑・
+// 選択範囲のオレンジのどれとも見分けられるよう赤系にする。調整帯の配色はUNLABELED_ADJUST_TRACK_COLORなど
+const UNLABELED_SEGMENT_COLORS: SegmentColors = {
+  region: "rgba(225, 29, 72, 0.12)",
+  activeRegion: "rgba(225, 29, 72, 0.25)",
+  labelBackground: "rgba(255, 241, 242, 0.95)",
+  labelBorder: "#e11d48",
+  minimap: "rgba(225, 29, 72, 0.35)",
+};
 
 // 文字起こしで処理中の区間の塗りを、処理し終わった区間の緑と濃い緑の間でなめらかに行き来させる(速さは実行中の枠の色の
 // 変化(index.cssのborder-pulse)と揃える)。区間はwavesurferのShadow DOMの中にありページのCSSが届かないため、要素に直接かける
@@ -96,14 +105,15 @@ function createRangeBar(
 }
 
 // 編集を止めている間は、処理中の区間(highlightedSegmentId)を濃い緑、処理し終わった区間を緑、他を灰色にする。
-// どこまで処理したかを波形上で追えるようにするため
+// どこまで処理したかを波形上で追えるようにするため。未入力の区間の色分けより、こちらの進み具合を優先する
 function getSegmentColors(
   segment: Segment,
   editingLocked: boolean,
   highlightedSegmentId: string | null,
   processedSegmentIds: ReadonlySet<string>,
+  highlightUnlabeled: boolean,
 ): SegmentColors {
-  if (!editingLocked) return SEGMENT_COLORS;
+  if (!editingLocked) return highlightUnlabeled && segment.label === "" ? UNLABELED_SEGMENT_COLORS : SEGMENT_COLORS;
   if (segment.id === highlightedSegmentId) return HIGHLIGHTED_SEGMENT_COLORS;
   return processedSegmentIds.has(segment.id) ? PROCESSED_SEGMENT_COLORS : LOCKED_SEGMENT_COLORS;
 }
@@ -225,6 +235,8 @@ type AdjustBar = {
   // 編集を止めている間(自動検出・文字起こし中)は、操作できないことが分かるよう区間と同じ灰色にし、
   // カーソルを当てても掴める・幅を変えられる形に変えない
   setLocked: (locked: boolean) => void;
+  // 未入力の区間の色分けがオンでラベルが空のときは、区間と同じ赤系にする。編集を止めている間の灰色が優先
+  setUnlabeled: (unlabeled: boolean) => void;
 };
 
 // 調整帯の配色。非選択時も「掴める」ことが分かる程度に見せ、選択中・ホバー中は濃くする。
@@ -236,6 +248,14 @@ const ADJUST_TRACK_COLOR = {
   locked: "rgba(107, 114, 128, 0.12)",
 };
 const ADJUST_KNOB_COLOR = { idle: "#93c5fd", hover: "#60a5fa", active: "#2563eb", locked: "#d1d5db" };
+// 未入力の区間の調整帯の配色(UNLABELED_SEGMENT_COLORSと同じ赤系で、濃さの段階は上の青と揃える)
+const UNLABELED_ADJUST_TRACK_COLOR = {
+  ...ADJUST_TRACK_COLOR,
+  idle: "rgba(225, 29, 72, 0.12)",
+  hover: "rgba(225, 29, 72, 0.22)",
+  active: "rgba(225, 29, 72, 0.3)",
+};
+const UNLABELED_ADJUST_KNOB_COLOR = { ...ADJUST_KNOB_COLOR, idle: "#fda4af", hover: "#fb7185", active: "#e11d48" };
 
 // ラベル帯の下に置く、区間の位置・幅を調整する帯。中央(グリップ)のドラッグで移動、両端のつまみのドラッグで幅を変える。
 // 波形部分やラベル帯でのドラッグ(新規のドラッグ選択・文字選択)と操作を混同しないよう、位置・幅はここでしか変えられない
@@ -292,12 +312,15 @@ function createAdjustBar({ onStart, onMove, onEnd }: AdjustBarHandlers): AdjustB
   let isActive = false;
   let isHovered = false;
   let isLocked = false;
+  let isUnlabeled = false;
   const render = () => {
     const state = isLocked ? "locked" : isActive ? "active" : isHovered ? "hover" : "idle";
-    bar.style.backgroundColor = ADJUST_TRACK_COLOR[state];
-    startKnob.style.backgroundColor = ADJUST_KNOB_COLOR[state];
-    endKnob.style.backgroundColor = ADJUST_KNOB_COLOR[state];
-    grip.style.backgroundImage = `radial-gradient(circle, ${ADJUST_KNOB_COLOR[state]} 1.5px, transparent 1.5px)`;
+    const trackColor = (isUnlabeled ? UNLABELED_ADJUST_TRACK_COLOR : ADJUST_TRACK_COLOR)[state];
+    const knobColor = (isUnlabeled ? UNLABELED_ADJUST_KNOB_COLOR : ADJUST_KNOB_COLOR)[state];
+    bar.style.backgroundColor = trackColor;
+    startKnob.style.backgroundColor = knobColor;
+    endKnob.style.backgroundColor = knobColor;
+    grip.style.backgroundImage = `radial-gradient(circle, ${knobColor} 1.5px, transparent 1.5px)`;
     grip.style.backgroundSize = "5px 4px";
     bar.style.cursor = isLocked ? "default" : "grab";
     startKnob.style.cursor = isLocked ? "default" : "ew-resize";
@@ -346,6 +369,11 @@ function createAdjustBar({ onStart, onMove, onEnd }: AdjustBarHandlers): AdjustB
     setLocked: (locked) => {
       if (isLocked === locked) return;
       isLocked = locked;
+      render();
+    },
+    setUnlabeled: (unlabeled) => {
+      if (isUnlabeled === unlabeled) return;
+      isUnlabeled = unlabeled;
       render();
     },
   };
@@ -437,6 +465,8 @@ type UseWavesurferOptions = {
   processedSegmentIds: ReadonlySet<string>;
   // 自動検出の途中経過(発話らしさがしきい値を超えた部分)。区間とは別に、波形の上に塗るだけで操作はできない
   detectionPreviewRanges: Pick<Segment, "startSec" | "endSec">[];
+  // ラベルが空の区間を別の色にする(ヘッダーの「表示」メニューで切り替える)
+  highlightUnlabeledSegments: boolean;
 };
 
 type UseWavesurferResult = {
@@ -484,6 +514,7 @@ export function useWavesurfer(
     highlightedSegmentId,
     processedSegmentIds,
     detectionPreviewRanges,
+    highlightUnlabeledSegments,
   }: UseWavesurferOptions,
 ): UseWavesurferResult {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -520,6 +551,8 @@ export function useWavesurfer(
   highlightedSegmentIdRef.current = highlightedSegmentId;
   const processedSegmentIdsRef = useRef(processedSegmentIds);
   processedSegmentIdsRef.current = processedSegmentIds;
+  const highlightUnlabeledSegmentsRef = useRef(highlightUnlabeledSegments);
+  highlightUnlabeledSegmentsRef.current = highlightUnlabeledSegments;
   // 生成時に参照するだけで、変更は下のeffectでsetOptionsにより反映する(波形を作り直さないため)
   const playbackScrollModeRef = useRef(playbackScrollMode);
   playbackScrollModeRef.current = playbackScrollMode;
@@ -735,13 +768,15 @@ export function useWavesurfer(
       // 区間は作り直さないため、ラベルの比較・復元には生成時点ではなく常に最新の値を使う
       const getCurrentLabel = () => segmentsRef.current.find((s) => s.id === id)?.label ?? "";
 
-      // 編集を止めた・再開したとき、文字起こしで処理中・処理済みの区間が変わったときは、区間を作り直さず配色だけ切り替える
+      // 編集を止めた・再開したとき、文字起こしで処理中・処理済みの区間が変わったとき、未入力の区間の色分けを切り替えたときは、
+      // 区間を作り直さず配色だけ切り替える
       const getColors = (latest: Segment) =>
         getSegmentColors(
           latest,
           editingLockedRef.current,
           highlightedSegmentIdRef.current,
           processedSegmentIdsRef.current,
+          highlightUnlabeledSegmentsRef.current,
         );
       let colors = getColors(segment);
       const content = createLabelContent(segment.label, colors.labelBackground, colors.labelBorder);
@@ -794,11 +829,13 @@ export function useWavesurfer(
       element.appendChild(adjustBar.element);
 
       // 編集を止めている間は、調整帯を灰色にし、ラベル帯・調整帯にカーソルを当てても形を変えない(押しても何も起きないため)。
+      // 未入力の区間を色分けしているときは、調整帯も区間と同じ赤系にする。
       // 文字起こしで処理中の区間のときだけ塗りを動かし、処理中でなくなったら止めてsetOptionsで指定した色に戻す
       let pulse: Animation | null = null;
-      const syncLockedAppearance = () => {
+      const syncAppearance = () => {
         const locked = editingLockedRef.current;
         adjustBar.setLocked(locked);
+        adjustBar.setUnlabeled(colors === UNLABELED_SEGMENT_COLORS);
         if (!content.isContentEditable) content.style.cursor = locked ? "default" : "pointer";
         const isHighlighted = colors === HIGHLIGHTED_SEGMENT_COLORS;
         if (isHighlighted && !pulse) {
@@ -812,7 +849,7 @@ export function useWavesurfer(
           pulse = null;
         }
       };
-      syncLockedAppearance();
+      syncAppearance();
 
       const deactivate = () => {
         if (activeSegmentRef.current?.id !== id) return;
@@ -833,7 +870,7 @@ export function useWavesurfer(
         colors = getColors(latest);
         setLabelContentColors(content, colors.labelBackground, colors.labelBorder);
         region.setOptions({ color: activeSegmentRef.current?.id === id ? colors.activeRegion : colors.region });
-        syncLockedAppearance();
+        syncAppearance();
         if (region.start !== latest.startSec || region.end !== latest.endSec) {
           region.setOptions({ start: latest.startSec, end: latest.endSec });
         }
@@ -882,8 +919,9 @@ export function useWavesurfer(
         if (label !== getCurrentLabel()) onUpdateLabelRef.current(id, label);
       });
     }
-    // 文字起こしの開始・終了、処理中の区間の移り変わりでも配色を更新するため、区間が変わらなくても走らせる
-  }, [segments, isReady, editingLocked, highlightedSegmentId, processedSegmentIds]);
+    // 文字起こしの開始・終了、処理中の区間の移り変わり、未入力の区間の色分けの切り替えでも配色を更新するため、
+    // 区間が変わらなくても走らせる
+  }, [segments, isReady, editingLocked, highlightedSegmentId, processedSegmentIds, highlightUnlabeledSegments]);
 
   // 全体波形の上に確定済み区間の範囲と、自動検出の途中経過を表示する。数が多くても描き直しは軽いため、変わるたびに全て作り直す
   useEffect(() => {
@@ -891,7 +929,13 @@ export function useWavesurfer(
     if (!layer || !isReady || duration <= 0) return;
     layer.replaceChildren(
       ...segments.map((segment) => {
-        const colors = getSegmentColors(segment, editingLocked, highlightedSegmentId, processedSegmentIds);
+        const colors = getSegmentColors(
+          segment,
+          editingLocked,
+          highlightedSegmentId,
+          processedSegmentIds,
+          highlightUnlabeledSegments,
+        );
         const bar = createRangeBar(segment, duration, colors.minimap);
         // 帯は作り直すたびに捨てるため、アニメーションも要素ごと消える
         if (colors === HIGHLIGHTED_SEGMENT_COLORS) {
@@ -901,7 +945,16 @@ export function useWavesurfer(
       }),
       ...detectionPreviewRanges.map((range) => createRangeBar(range, duration, PROCESSED_SEGMENT_COLORS.minimap)),
     );
-  }, [segments, isReady, duration, editingLocked, highlightedSegmentId, processedSegmentIds, detectionPreviewRanges]);
+  }, [
+    segments,
+    isReady,
+    duration,
+    editingLocked,
+    highlightedSegmentId,
+    processedSegmentIds,
+    detectionPreviewRanges,
+    highlightUnlabeledSegments,
+  ]);
 
   // メイン波形の上に自動検出の途中経過を表示する。終わると空になり、正式な区間に置き換わる
   useEffect(() => {

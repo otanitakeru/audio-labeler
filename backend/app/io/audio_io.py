@@ -12,6 +12,10 @@ class AudioFileError(Exception):
     """音声ファイルの読み込み・処理でユーザー操作に起因しうるエラー"""
 
 
+# 読めなかったときの利用者向けの文言。保存先のファイル名はアップロード時に付けたIDで利用者には意味がないため含めない
+_UNREADABLE_AUDIO_MESSAGE = "音声ファイルを読み込めません。WAV形式の音声ファイルか確認してください。"
+
+
 def uploaded_audio_path(upload_id: str) -> Path:
     return UPLOAD_DIR / f"{upload_id}.wav"
 
@@ -42,7 +46,7 @@ def get_audio_info(path: Path) -> AudioInfo:
     try:
         info = sf.info(str(path))
     except Exception as e:
-        raise AudioFileError(f"音声ファイルを読み込めません: {path.name}") from e
+        raise AudioFileError(_UNREADABLE_AUDIO_MESSAGE) from e
     bit_depth, is_float = _SUBTYPE_SAMPLE_FORMATS.get(info.subtype, (None, False))
     return AudioInfo(
         duration_sec=info.duration,
@@ -60,7 +64,7 @@ def read_channel(path: Path, channel_index: int, dtype: str = "float64") -> tupl
     try:
         data, samplerate = sf.read(str(path), always_2d=True, dtype=dtype)
     except Exception as e:
-        raise AudioFileError(f"音声ファイルを読み込めません: {path.name}") from e
+        raise AudioFileError(_UNREADABLE_AUDIO_MESSAGE) from e
 
     channel_count = data.shape[1]
     if not (0 <= channel_index < channel_count):
@@ -93,7 +97,7 @@ def open_audio_file(path: Path) -> sf.SoundFile:
     try:
         return sf.SoundFile(str(path))
     except Exception as e:
-        raise AudioFileError(f"音声ファイルを読み込めません: {path.name}") from e
+        raise AudioFileError(_UNREADABLE_AUDIO_MESSAGE) from e
 
 
 def read_range(sound_file: sf.SoundFile, start_sec: float, end_sec: float) -> np.ndarray:

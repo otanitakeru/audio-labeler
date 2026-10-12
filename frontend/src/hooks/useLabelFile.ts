@@ -33,9 +33,18 @@ function findRangeBeyondDuration(ranges: LabeledRange[], durationSec: number): L
 // 壊れたファイルで置き換えの確認を出したり、読み込みのダイアログを閉じたりしないよう、入れる前に検証を済ませる。
 // durationSecは区間を入れる音声の長さ
 export async function readLabelFile(file: File, durationSec: number): Promise<LabelFileReadResult> {
+  // file.text()はUTF-8として読めない文字を置き換えてしまい、Shift-JISなどのファイルが文字化けしたまま区間に入るため、
+  // 読めなければ失敗するように読む
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
+  } catch (e) {
+    if (!(e instanceof TypeError)) throw e;
+    return { success: false, error: "ラベルを読み込めませんでした。文字コードをUTF-8にして保存し直してください" };
+  }
   let ranges;
   try {
-    ranges = parseLabels(await file.text());
+    ranges = parseLabels(text);
   } catch (e) {
     if (!(e instanceof LabelFormatError)) throw e;
     return { success: false, error: `ラベルを読み込めませんでした。${e.message}` };
@@ -89,14 +98,20 @@ export function useLabelFile(): LabelFileState {
     setPendingRanges(null);
   };
 
+  // 保存先に書き込めないときなどに黙って終わると、書き出したつもりで変更を失うため知らせる
   const exportLabelFile = async (): Promise<void> => {
+    setError(null);
     const text = serializeLabels(segments);
-    const saved = await saveFile(
-      `${(filename ?? "labels").replace(/\.wav$/i, "")}.txt`,
-      { description: "ラベルファイル", mimeType: "text/plain", extension: ".txt" },
-      async () => new Blob([text], { type: "text/plain;charset=utf-8" }),
-    );
-    if (saved) markSegmentsSaved();
+    try {
+      const saved = await saveFile(
+        `${(filename ?? "labels").replace(/\.wav$/i, "")}.txt`,
+        { description: "ラベルファイル", mimeType: "text/plain", extension: ".txt" },
+        async () => new Blob([text], { type: "text/plain;charset=utf-8" }),
+      );
+      if (saved) markSegmentsSaved();
+    } catch {
+      setError("ラベルを書き出せませんでした。保存先を変えて、もう一度お試しください。");
+    }
   };
 
   return {

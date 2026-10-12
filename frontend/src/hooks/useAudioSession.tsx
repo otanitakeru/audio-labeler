@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { uploadAudioFile } from "../api/audioApi";
+import { AudioUploadRequestError, uploadAudioFile } from "../api/audioApi";
 import type { AudioFileInfo } from "../types";
 
 type AudioSessionState = {
@@ -32,8 +32,13 @@ export function AudioSessionProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       return await uploadAudioFile(file);
-    } catch {
-      setError("音声ファイルを読み込めませんでした。WAV形式のファイルを選択してください。");
+    } catch (e) {
+      // ファイルに原因があるときはバックエンドが400で理由を返すため、それ以外はサーバー側(停止中など)の問題として知らせる
+      setError(
+        e instanceof AudioUploadRequestError
+          ? e.message
+          : "音声ファイルを読み込めませんでした。サーバーが起動しているか確認して、もう一度お試しください。",
+      );
       return null;
     } finally {
       setIsUploading(false);

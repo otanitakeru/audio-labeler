@@ -13,6 +13,9 @@ type UploadedAudioInfoResponse = {
   is_float: boolean;
 };
 
+// WAV以外・壊れたファイルなど、利用者が直せるエラー。バックエンドが返す文言をそのまま見せる
+export class AudioUploadRequestError extends Error {}
+
 export async function uploadAudioFile(file: File): Promise<AudioFileInfo> {
   const formData = new FormData();
   formData.append("file", file);
@@ -21,6 +24,10 @@ export async function uploadAudioFile(file: File): Promise<AudioFileInfo> {
     method: "POST",
     body: formData,
   });
+  if (res.status === 400) {
+    const { detail }: { detail: string } = await res.json();
+    throw new AudioUploadRequestError(detail);
+  }
   if (!res.ok) throw new Error("failed to upload audio file");
   const data: UploadedAudioInfoResponse = await res.json();
   return {
@@ -32,6 +39,12 @@ export async function uploadAudioFile(file: File): Promise<AudioFileInfo> {
     bitDepth: data.bit_depth,
     isFloat: data.is_float,
   };
+}
+
+// 使わなくなったアップロード済みの音声をバックエンドから消す
+export async function deleteUploadedAudio(uploadId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/audio/uploads/${encodeURIComponent(uploadId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("failed to delete uploaded audio");
 }
 
 export function getAudioStreamUrl(uploadId: string, channel: number): string {

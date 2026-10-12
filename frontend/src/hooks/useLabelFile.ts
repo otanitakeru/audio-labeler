@@ -17,23 +17,52 @@ type LabelFileState = {
 
 type LabelFileReadResult = { success: true; ranges: LabeledRange[] } | { success: false; error: string };
 
+// 区間の終わりが音声の長さを超えてもよい幅。書き出したラベルの終わりはブラウザが測った音声の長さに揃えてあり、
+// ここで比べるバックエンドが測った長さとわずかに食い違うことがあるため、自分で書き出したファイルを弾かないよう許す
+const DURATION_TOLERANCE_SEC = 0.001;
+
+// 音声の長さを超える区間を探す。ドラッグ・ずらし・自動検出は音声の範囲に切り詰めて作るため、範囲外の区間が入りうるのは
+// ラベルファイルだけで、ここでのみ検証する(違う音声のラベルファイルを選んだ間違いに気づけるようにするため)
+function findRangeBeyondDuration(ranges: LabeledRange[], durationSec: number): LabeledRange | undefined {
+  return [...ranges]
+    .sort((a, b) => a.startSec - b.startSec)
+    .find((r) => r.endSec > durationSec + DURATION_TOLERANCE_SEC);
+}
+
 // ラベルファイルを読み、区間として入れられるかまで検証する(ヘッダーからの読み込みと、音声の読み込みのダイアログで使う)。
-// 壊れたファイルで置き換えの確認を出したり、読み込みのダイアログを閉じたりしないよう、入れる前に検証を済ませる
-export async function readLabelFile(file: File): Promise<LabelFileReadResult> {
+// 壊れたファイルで置き換えの確認を出したり、読み込みのダイアログを閉じたりしないよう、入れる前に検証を済ませる。
+// durationSecは区間を入れる音声の長さ
+export async function readLabelFile(file: File, durationSec: number): Promise<LabelFileReadResult> {
+  // file.text()はUTF-8として読めない文字を置き換えてしまい、Shift-JISなどのファイルが文字化けしたまま区間に入るため、
+  // 読めなければ失敗するように読む
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
+  } catch (e) {
+    if (!(e instanceof TypeError)) throw e;
+    return { success: false, error: "ラベルを読み込めませんでした。文字コードをUTF-8にして保存し直してください" };
+  }
   let ranges;
   try {
-    ranges = parseLabels(await file.text());
+    ranges = parseLabels(text);
   } catch (e) {
     if (!(e instanceof LabelFormatError)) throw e;
     return { success: false, error: `ラベルを読み込めませんでした。${e.message}` };
   }
   const error = findLabeledRangesError(ranges);
   if (error) return { success: false, error: `ラベルを読み込めませんでした。${error}` };
+  const beyond = findRangeBeyondDuration(ranges, durationSec);
+  if (beyond) {
+    return {
+      success: false,
+      error: `ラベルを読み込めませんでした。${beyond.startSec}〜${beyond.endSec}秒の区間: 音声の長さ(${durationSec}秒)を超えています`,
+    };
+  }
   return { success: true, ranges };
 }
 
 export function useLabelFile(): LabelFileState {
-  const { filename } = useAudioSession();
+  const { audioInfo, filename } = useAudioSession();
   const { segments, replaceSegments, markSegmentsSaved } = useSegments();
   const [error, setError] = useState<string | null>(null);
   // 既存のラベルを置き換えてよいか確認している間、読み込んだ区間をここに控えておく
@@ -48,9 +77,11 @@ export function useLabelFile(): LabelFileState {
     markSegmentsSaved();
   };
 
+  // 音声を読み込むまでは、ヘッダーの「ラベルを読み込む」は押せない
   const importLabelFile = async (file: File): Promise<void> => {
+    if (!audioInfo) return;
     setError(null);
-    const result = await readLabelFile(file);
+    const result = await readLabelFile(file, audioInfo.durationSec);
     if (!result.success) {
       setError(result.error);
       return;
@@ -67,14 +98,20 @@ export function useLabelFile(): LabelFileState {
     setPendingRanges(null);
   };
 
+  // 保存先に書き込めないときなどに黙って終わると、書き出したつもりで変更を失うため知らせる
   const exportLabelFile = async (): Promise<void> => {
+    setError(null);
     const text = serializeLabels(segments);
-    const saved = await saveFile(
-      `${(filename ?? "labels").replace(/\.wav$/i, "")}.txt`,
-      { description: "ラベルファイル", mimeType: "text/plain", extension: ".txt" },
-      async () => new Blob([text], { type: "text/plain;charset=utf-8" }),
-    );
-    if (saved) markSegmentsSaved();
+    try {
+      const saved = await saveFile(
+        `${(filename ?? "labels").replace(/\.wav$/i, "")}.txt`,
+        { description: "ラベルファイル", mimeType: "text/plain", extension: ".txt" },
+        async () => new Blob([text], { type: "text/plain;charset=utf-8" }),
+      );
+      if (saved) markSegmentsSaved();
+    } catch {
+      setError("ラベルを書き出せませんでした。保存先を変えて、もう一度お試しください。");
+    }
   };
 
   return {

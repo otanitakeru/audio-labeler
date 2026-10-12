@@ -45,7 +45,7 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
   const canLoad = !channelOutOfRange && labelFile?.error == null;
 
   const selectLabelFile = async (file: File) => {
-    const result = await readLabelFile(file);
+    const result = await readLabelFile(file, info.durationSec);
     setLabelFile(
       result.success
         ? { filename: file.name, ranges: result.ranges, error: null }

@@ -12,6 +12,9 @@ class AudioFileError(Exception):
     """音声ファイルの読み込み・処理でユーザー操作に起因しうるエラー"""
 
 
+# チャンネルを抜き出すときに一度に読むサンプル数(48kHzで約20秒)。8chでも1回あたり数十MBに収まる
+_READ_BLOCK_FRAMES = 1_000_000
+
 # 読めなかったときの利用者向けの文言。保存先のファイル名はアップロード時に付けたIDで利用者には意味がないため含めない
 _UNREADABLE_AUDIO_MESSAGE = "音声ファイルを読み込めません。WAV形式の音声ファイルか確認してください。"
 
@@ -57,21 +60,25 @@ def get_audio_info(path: Path) -> AudioInfo:
     )
 
 
-def read_channel(path: Path, channel_index: int, dtype: str = "float64") -> tuple[np.ndarray, int]:
+def read_channel(path: Path, channel_index: int, dtype: str = "float32") -> tuple[np.ndarray, int]:
     """指定したチャンネル1本だけを抽出したモノラル波形と、サンプリングレートを返す。
-    dtypeが"float64"・"float32"なら-1〜1の値、"int16"なら16bit整数の値で返す。
+    dtypeが"float32"・"float64"なら-1〜1の値、"int16"なら16bit整数の値で返す。
     元がfloatの音声を"int16"で読むと値が拡大されず(0.5が0になる)、ほぼ無音になるため使わない"""
-    try:
-        data, samplerate = sf.read(str(path), always_2d=True, dtype=dtype)
-    except Exception as e:
-        raise AudioFileError(_UNREADABLE_AUDIO_MESSAGE) from e
-
-    channel_count = data.shape[1]
-    if not (0 <= channel_index < channel_count):
-        raise AudioFileError(
-            f"チャンネル番号が不正です(0〜{channel_count - 1}の範囲で指定してください)"
-        )
-    return np.ascontiguousarray(data[:, channel_index]), samplerate
+    with open_audio_file(path) as sound_file:
+        channel_count = sound_file.channels
+        if not (0 <= channel_index < channel_count):
+            raise AudioFileError(
+                f"チャンネル番号が不正です(0〜{channel_count - 1}の範囲で指定してください)"
+            )
+        # 全チャンネルを一度に読むと、長い多チャンネルの音声では使わないチャンネルの分までメモリを使う
+        # (1時間・8ch・48kHzをfloat64で読むと約11GB)ため、少しずつ読んで指定のチャンネルだけを残す
+        mono = np.empty(sound_file.frames, dtype=dtype)
+        filled = 0
+        for block in sound_file.blocks(_READ_BLOCK_FRAMES, dtype=dtype, always_2d=True):
+            mono[filled : filled + len(block)] = block[:, channel_index]
+            filled += len(block)
+        # ヘッダーのサンプル数より実際のデータが短い(途中で切れた)ファイルでは、読めた分だけを返す
+        return mono[:filled], sound_file.samplerate
 
 
 def to_wav_bytes(samples: np.ndarray, sample_rate: int, subtype: str) -> bytes:

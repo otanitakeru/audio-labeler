@@ -41,6 +41,12 @@ export async function uploadAudioFile(file: File): Promise<AudioFileInfo> {
   };
 }
 
+// 使わなくなったアップロード済みの音声をバックエンドから消す
+export async function deleteUploadedAudio(uploadId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/audio/uploads/${encodeURIComponent(uploadId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("failed to delete uploaded audio");
+}
+
 export function getAudioStreamUrl(uploadId: string, channel: number): string {
   return `${API_BASE_URL}/api/audio/uploads/${encodeURIComponent(uploadId)}?channel=${channel}`;
 }

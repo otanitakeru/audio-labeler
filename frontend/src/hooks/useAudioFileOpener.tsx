@@ -57,7 +57,7 @@ const AudioFileOpenerContext = createContext<AudioFileOpenerState | null>(null);
 // 新しい音声の読み込み。書き出していない変更の確認 → アップロード → 読み込みのダイアログ → 読み込み → 続けて行う処理、の順に進める。
 // ホーム画面とヘッダーのどちらから始めても、読み込んだ後の処理は画面遷移をまたいで続くため、状態をContextで持つ
 export function AudioFileOpenerProvider({ children }: { children: ReactNode }) {
-  const { uploadId, uploadFile, loadAudio } = useAudioSession();
+  const { uploadId, uploadFile, loadAudio, discardUpload } = useAudioSession();
   const { segments, hasUnsavedChanges, resetSegments } = useSegments();
   const { progress: detectionProgress, requestDetection } = useSpeechDetection();
   const { requestTranscription } = useTranscription();
@@ -124,7 +124,10 @@ export function AudioFileOpenerProvider({ children }: { children: ReactNode }) {
         cancelDiscard: () => setPendingFile(null),
         pendingAudioInfo,
         confirmLoad,
-        cancelLoad: () => setPendingAudioInfo(null),
+        cancelLoad: () => {
+          if (pendingAudioInfo) discardUpload(pendingAudioInfo);
+          setPendingAudioInfo(null);
+        },
       }}
     >
       {children}

@@ -49,7 +49,8 @@ def prepare_audio(samples: np.ndarray, sample_rate: int, model_id: str) -> Prepa
     Whisperは16kHzの音声しか受け付けないため、区間ごとではなく全体を一度だけ変換してから切り出して使う"""
     with _lock:
         model_sample_rate: int = _get_pipeline(model_id).feature_extractor.sampling_rate
-    wav = torch.from_numpy(samples.astype(np.float32))
+    # 既にfloat32なら(read_channelの既定)、長い音声で全体のコピーを作らないようにそのまま使う
+    wav = torch.from_numpy(samples.astype(np.float32, copy=False))
     if sample_rate != model_sample_rate:
         wav = resample(wav, sample_rate, model_sample_rate)
     return PreparedAudio(samples=wav.numpy(), sample_rate=model_sample_rate)

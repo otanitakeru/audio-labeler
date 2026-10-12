@@ -57,7 +57,8 @@ def detect_speech(
     cancelledが立ったらSpeechDetectionCancelledを投げて途中でやめる"""
     # Silero VADは8kHzか16kHzの音声しか受け付けないため、指定されたレートへリサンプリングしてから渡す
     vad_sample_rate = params.sampling_rate
-    wav = torch.from_numpy(samples.astype(np.float32))
+    # 既にfloat32なら(read_channelの既定)、長い音声で全体のコピーを作らないようにそのまま使う
+    wav = torch.from_numpy(samples.astype(np.float32, copy=False))
     if sample_rate != vad_sample_rate:
         wav = resample(wav, sample_rate, vad_sample_rate)
     vad_duration_sec = len(wav) / vad_sample_rate

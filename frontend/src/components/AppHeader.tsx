@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAudioFileOpener } from "../hooks/useAudioFileOpener";
 import { useAudioSession } from "../hooks/useAudioSession";
 import { useLabelFile } from "../hooks/useLabelFile";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useTranscription } from "../hooks/useTranscription";
+import { useViewOptions } from "../hooks/useViewOptions";
 import AlertDialog from "./AlertDialog";
 import ConfirmDialog from "./ConfirmDialog";
+import HeaderMenu from "./HeaderMenu";
 import SegmentExportDialog from "./SegmentExportDialog";
 
 type AppHeaderProps = {
@@ -32,18 +34,8 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
   const { progress: detectionProgress } = useSpeechDetection();
   const { progress: transcriptionProgress } = useTranscription();
   const isProcessing = detectionProgress !== null || transcriptionProgress !== null;
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { viewOptions, toggleViewOption } = useViewOptions();
   const [isSegmentExportOpen, setIsSegmentExportOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isMenuOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setIsMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isMenuOpen]);
 
   return (
     <header className="border-b border-gray-300 bg-white px-4 py-3.5">
@@ -52,17 +44,9 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
           Audio Labeler
         </Link>
 
-        <div ref={menuRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setIsMenuOpen((open) => !open)}
-            className="rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
-          >
-            ファイル
-          </button>
-
-          {isMenuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-1 w-56 rounded-md border border-gray-300 bg-white py-1 shadow-md">
+        <HeaderMenu title="ファイル">
+          {(close) => (
+            <>
               <label
                 className={`block px-3 py-2 text-sm ${
                   isProcessing ? "text-gray-400" : "cursor-pointer text-gray-900 hover:bg-gray-100"
@@ -76,7 +60,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
                   disabled={isUploading || isProcessing}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    setIsMenuOpen(false);
+                    close();
                     if (file) openAudioFile(file);
                     e.target.value = "";
                   }}
@@ -96,7 +80,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
                   disabled={!uploadId || isProcessing}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    setIsMenuOpen(false);
+                    close();
                     if (file) importLabelFile(file);
                     e.target.value = "";
                   }}
@@ -107,7 +91,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
                 type="button"
                 disabled={!canExport}
                 onClick={() => {
-                  setIsMenuOpen(false);
+                  close();
                   exportLabelFile();
                 }}
                 className="block w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-transparent"
@@ -119,16 +103,35 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
                 type="button"
                 disabled={!canExport}
                 onClick={() => {
-                  setIsMenuOpen(false);
+                  close();
                   setIsSegmentExportOpen(true);
                 }}
                 className="block w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-transparent"
               >
                 音声を切り出す
               </button>
-            </div>
+            </>
           )}
-        </div>
+        </HeaderMenu>
+
+        {/* 作業中にその場で切り替えて見比べる表示だけを置く。一度決めたらあまり変えないもの(波形の縦幅など)は設定ダイアログの「表示設定」に置く */}
+        <HeaderMenu title="表示">
+          {(close) => (
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={viewOptions.highlightUnlabeledSegments}
+              onClick={() => {
+                close();
+                toggleViewOption("highlightUnlabeledSegments");
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100"
+            >
+              <span className="w-4 text-center">{viewOptions.highlightUnlabeledSegments ? "✓" : ""}</span>
+              未入力の区間を色分け
+            </button>
+          )}
+        </HeaderMenu>
 
         <button
           type="button"

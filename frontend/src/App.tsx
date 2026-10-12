@@ -16,6 +16,7 @@ import { TranscriptionProvider } from "./hooks/useTranscription";
 import { TranscriptionSettingsProvider } from "./hooks/useTranscriptionSettings";
 import { useUnsavedChangesWarning } from "./hooks/useUnsavedChangesWarning";
 import { VadSettingsProvider } from "./hooks/useVadSettings";
+import { ViewOptionsProvider } from "./hooks/useViewOptions";
 import EditScreen from "./pages/EditScreen";
 import HomeScreen from "./pages/HomeScreen";
 
@@ -67,23 +68,25 @@ function App() {
     <AudioSessionProvider>
       <SegmentsProvider>
         <DisplaySettingsProvider>
-          <ShortcutBindingsProvider>
-            <VadSettingsProvider>
-              <SpeechDetectionProvider>
-                <TranscriptionSettingsProvider>
-                  <TranscriptionProvider>
-                    <EditingSettingsProvider>
-                      <AudioFileOpenerProvider>
-                        <Router>
-                          <AppLayout />
-                        </Router>
-                      </AudioFileOpenerProvider>
-                    </EditingSettingsProvider>
-                  </TranscriptionProvider>
-                </TranscriptionSettingsProvider>
-              </SpeechDetectionProvider>
-            </VadSettingsProvider>
-          </ShortcutBindingsProvider>
+          <ViewOptionsProvider>
+            <ShortcutBindingsProvider>
+              <VadSettingsProvider>
+                <SpeechDetectionProvider>
+                  <TranscriptionSettingsProvider>
+                    <TranscriptionProvider>
+                      <EditingSettingsProvider>
+                        <AudioFileOpenerProvider>
+                          <Router>
+                            <AppLayout />
+                          </Router>
+                        </AudioFileOpenerProvider>
+                      </EditingSettingsProvider>
+                    </TranscriptionProvider>
+                  </TranscriptionSettingsProvider>
+                </SpeechDetectionProvider>
+              </VadSettingsProvider>
+            </ShortcutBindingsProvider>
+          </ViewOptionsProvider>
         </DisplaySettingsProvider>
       </SegmentsProvider>
     </AudioSessionProvider>

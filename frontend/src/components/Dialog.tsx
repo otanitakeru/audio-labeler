@@ -28,8 +28,10 @@ function Dialog({ open, title, onClose, children }: DialogProps) {
     <dialog
       ref={dialogRef}
       // Escでは<dialog>自身に閉じさせず、親のopenをfalseにしてもらう(開閉は常にopenから決まるようにする)。
-      // closeイベントで同期しないのは、closeイベントは非同期に届き、閉じた直後に開き直したダイアログを遅れて届いたイベントで閉じてしまうことがあるため
+      // closeイベントで同期しないのは、closeイベントは非同期に届き、閉じた直後に開き直したダイアログを遅れて届いたイベントで閉じてしまうことがあるため。
+      // 中のファイル選択(<input type="file">)をキャンセルしたときのcancelイベントもバブリングして届くため、<dialog>自身のものだけを扱う
       onCancel={(e) => {
+        if (e.target !== e.currentTarget) return;
         e.preventDefault();
         onClose();
       }}

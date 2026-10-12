@@ -178,6 +178,12 @@ function focusAtEnd(el: HTMLElement): void {
   selection?.addRange(range);
 }
 
+// 日本語入力の変換中か。変換を確定するEnterでラベルの入力まで確定しないよう、キー操作の前に確かめる。
+// Safariは変換を確定した後にkeydownを送り、isComposingがfalseになるため、変換中のキーを表すkeyCode(229)も見る
+function isImeComposing(e: KeyboardEvent): boolean {
+  return e.isComposing || e.keyCode === 229;
+}
+
 // 区間(Region)の下端に固定表示する、ラベル文言表示・編集用の要素を作る。
 // ここでは見た目(波形下端に固定する位置・配色)だけを用意し、編集可否(contentEditable)は呼び出し側で決める
 function createLabelContent(initialText: string, background: string, borderColor: string): HTMLDivElement {
@@ -471,6 +477,8 @@ type UseWavesurferOptions = {
 
 type UseWavesurferResult = {
   isReady: boolean;
+  // 音声の取得・デコードに失敗した(バックエンドの再起動でアップロードした音声が消えたときなど)
+  isLoadFailed: boolean;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
@@ -574,6 +582,7 @@ export function useWavesurfer(
   const nudgeHistoryGroupKeyRef = useRef("");
 
   const [isReady, setIsReady] = useState(false);
+  const [isLoadFailed, setIsLoadFailed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -587,6 +596,7 @@ export function useWavesurfer(
   useEffect(() => {
     zoomAnchorRef.current = null;
     setIsReady(false);
+    setIsLoadFailed(false);
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
@@ -684,6 +694,8 @@ export function useWavesurfer(
       setPeakAmplitude(peak);
       setIsReady(true);
     });
+    // 音声を切り替えたときの取得の中断は、destroy()でリスナーが外れた後に起きるためここには届かない
+    wavesurfer.on("error", () => setIsLoadFailed(true));
     wavesurfer.on("play", () => setIsPlaying(true));
     wavesurfer.on("pause", () => setIsPlaying(false));
     wavesurfer.on("finish", () => setIsPlaying(false));
@@ -902,7 +914,7 @@ export function useWavesurfer(
       // blurで編集状態が外れた後にdocumentへ伝わると、同じキーが「文言の編集」「選択の解除」のショートカットとして
       // 続けて発火してしまうため、伝播を止める
       content.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter" && e.key !== "Escape") return;
+        if ((e.key !== "Enter" && e.key !== "Escape") || isImeComposing(e)) return;
         e.preventDefault();
         e.stopPropagation();
         if (e.key === "Escape") content.textContent = getCurrentLabel();
@@ -1179,6 +1191,7 @@ export function useWavesurfer(
       region.setContent(undefined);
     };
     content.addEventListener("keydown", (e) => {
+      if (isImeComposing(e)) return;
       if (e.key === "Enter") {
         e.preventDefault();
         commit();
@@ -1199,6 +1212,7 @@ export function useWavesurfer(
 
   return {
     isReady,
+    isLoadFailed,
     isPlaying,
     currentTime,
     duration,

@@ -55,7 +55,8 @@ def get_audio_info(path: Path) -> AudioInfo:
 
 def read_channel(path: Path, channel_index: int, dtype: str = "float64") -> tuple[np.ndarray, int]:
     """指定したチャンネル1本だけを抽出したモノラル波形と、サンプリングレートを返す。
-    dtypeが"float64"なら-1〜1の値、"int16"なら16bit整数の値で返す"""
+    dtypeが"float64"・"float32"なら-1〜1の値、"int16"なら16bit整数の値で返す。
+    元がfloatの音声を"int16"で読むと値が拡大されず(0.5が0になる)、ほぼ無音になるため使わない"""
     try:
         data, samplerate = sf.read(str(path), always_2d=True, dtype=dtype)
     except Exception as e:
@@ -78,7 +79,11 @@ def to_wav_bytes(samples: np.ndarray, sample_rate: int, subtype: str) -> bytes:
 
 def extract_channel_as_wav_bytes(path: Path, channel_index: int) -> bytes:
     """指定したチャンネル1本だけを抽出したモノラルWAVのバイト列を返す"""
-    # 書き出しは16bitなので、最初から16bit整数で読む。float64で読んで変換し直すと、長い音声では1秒近く余計にかかるため
+    # 書き出しは16bitなので、整数の音声は最初から16bit整数で読む。float64で読んで変換し直すと、長い音声では1秒近く余計にかかるため。
+    # floatの音声は16bit整数では正しく読めないため(read_channel参照)、floatで読み、-1〜1を超える値を切り詰めてから書き出す
+    if get_audio_info(path).is_float:
+        mono, samplerate = read_channel(path, channel_index, dtype="float32")
+        return to_wav_bytes(np.clip(mono, -1.0, 1.0), samplerate, "PCM_16")
     mono, samplerate = read_channel(path, channel_index, dtype="int16")
     return to_wav_bytes(mono, samplerate, "PCM_16")
 

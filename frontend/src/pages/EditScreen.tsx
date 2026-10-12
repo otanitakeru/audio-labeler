@@ -90,6 +90,7 @@ function EditScreen() {
   const audioUrl = uploadId ? getAudioStreamUrl(uploadId, channel) : null;
   const {
     isReady,
+    isLoadFailed,
     isPlaying,
     currentTime,
     duration,
@@ -233,8 +234,14 @@ function EditScreen() {
             // wavesurferの内部要素(カーソル・区間など)はz-indexを持つため、それより前面に出す
             className="absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-lg bg-white/80 text-gray-500"
           >
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-            波形を読み込み中...
+            {isLoadFailed ? (
+              "波形を読み込めませんでした。音声を読み込み直してください。"
+            ) : (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                波形を読み込み中...
+              </>
+            )}
           </div>
         )}
       </div>

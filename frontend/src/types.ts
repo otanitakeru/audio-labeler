@@ -69,6 +69,32 @@ export type AudioLoadChoices = {
   afterLoadProcessing: AfterLoadProcessing;
 };
 
+// 音声の切り出しで書き出すチャンネル
+// - loaded: 読み込んだ(波形に表示している)チャンネル
+// - all: すべてのチャンネル(多チャンネルのまま書き出す)
+// - 数値: 指定した番号のチャンネル
+export type SegmentExportChannel = "loaded" | "all" | number;
+
+// 音声の切り出しで書き出すwavのサンプル形式(バックエンドのExportSampleFormatと対応)
+export type SegmentExportSampleFormat = "pcm16" | "pcm24" | "float32";
+
+// 音声の切り出しのダイアログで選んだ内容。次の切り出しの初期値として覚えておく
+export type SegmentExportChoices = {
+  // trueならラベルがある区間だけを書き出す
+  labeledOnly: boolean;
+  channel: SegmentExportChannel;
+  // nullのときは元のまま
+  sampleRate: number | null;
+  // nullのときは元のまま
+  sampleFormat: SegmentExportSampleFormat | null;
+  // trueならtext.txt(idとラベルの対応)も入れる
+  includeLabels: boolean;
+  // segment.txt・text.txt の列の区切り
+  delimiter: "tab" | "space";
+  // trueならidを最大の番号の桁数にゼロ埋めする(100件なら001)
+  zeroPadIds: boolean;
+};
+
 // 区間の編集操作に関する設定
 export type EditingSettings = {
   // ショートカットで区間の開始・終了を1回ずらす量(ミリ秒)

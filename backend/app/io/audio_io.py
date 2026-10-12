@@ -69,10 +69,32 @@ def read_channel(path: Path, channel_index: int, dtype: str = "float64") -> tupl
     return np.ascontiguousarray(data[:, channel_index]), samplerate
 
 
+def to_wav_bytes(samples: np.ndarray, sample_rate: int, subtype: str) -> bytes:
+    """波形をWAVのバイト列にする。subtypeはsoundfileのサンプル形式(PCM_16など)"""
+    buffer = io.BytesIO()
+    sf.write(buffer, samples, sample_rate, format="WAV", subtype=subtype)
+    return buffer.getvalue()
+
+
 def extract_channel_as_wav_bytes(path: Path, channel_index: int) -> bytes:
     """指定したチャンネル1本だけを抽出したモノラルWAVのバイト列を返す"""
     # 書き出しは16bitなので、最初から16bit整数で読む。float64で読んで変換し直すと、長い音声では1秒近く余計にかかるため
     mono, samplerate = read_channel(path, channel_index, dtype="int16")
-    buffer = io.BytesIO()
-    sf.write(buffer, mono, samplerate, format="WAV", subtype="PCM_16")
-    return buffer.getvalue()
+    return to_wav_bytes(mono, samplerate, "PCM_16")
+
+
+def open_audio_file(path: Path) -> sf.SoundFile:
+    """範囲を指定して少しずつ読むために開く。全体を読み込むと、長い多チャンネルの音声ではメモリを多く使うため"""
+    try:
+        return sf.SoundFile(str(path))
+    except Exception as e:
+        raise AudioFileError(f"音声ファイルを読み込めません: {path.name}") from e
+
+
+def read_range(sound_file: sf.SoundFile, start_sec: float, end_sec: float) -> np.ndarray:
+    """開いた音声の指定した範囲を、全チャンネルのまま(サンプル数, チャンネル数)の-1〜1の値で返す。
+    範囲の端は最も近いサンプルに丸め、音声の長さを超える分は切り詰める"""
+    start_frame = min(round(start_sec * sound_file.samplerate), sound_file.frames)
+    end_frame = min(round(end_sec * sound_file.samplerate), sound_file.frames)
+    sound_file.seek(start_frame)
+    return sound_file.read(end_frame - start_frame, dtype="float64", always_2d=True)

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { LabelFormatError, parseLabels, serializeLabels, type LabeledRange } from "../formats/labelFormat";
+import { saveFile } from "../saveFile";
 import { useAudioSession } from "./useAudioSession";
 import { findLabeledRangesError, useSegments } from "./useSegments";
 
@@ -13,16 +14,6 @@ type LabelFileState = {
   confirmReplace: () => void;
   cancelReplace: () => void;
 };
-
-// showSaveFilePickerはChrome/Edgeのみが対応しており、TypeScript標準の型定義に含まれないため使う範囲だけ宣言する
-declare global {
-  interface Window {
-    showSaveFilePicker?: (options: {
-      suggestedName: string;
-      types: { description: string; accept: Record<string, string[]> }[];
-    }) => Promise<FileSystemFileHandle>;
-  }
-}
 
 type LabelFileReadResult = { success: true; ranges: LabeledRange[] } | { success: false; error: string };
 
@@ -76,37 +67,14 @@ export function useLabelFile(): LabelFileState {
     setPendingRanges(null);
   };
 
-  // 保存場所を選べるChrome/Edgeでは保存ダイアログを出し、それ以外のブラウザではダウンロードフォルダに保存する
   const exportLabelFile = async (): Promise<void> => {
     const text = serializeLabels(segments);
-    const suggestedName = `${(filename ?? "labels").replace(/\.wav$/i, "")}.txt`;
-
-    if (window.showSaveFilePicker) {
-      let handle: FileSystemFileHandle;
-      try {
-        handle = await window.showSaveFilePicker({
-          suggestedName,
-          types: [{ description: "ラベルファイル", accept: { "text/plain": [".txt"] } }],
-        });
-      } catch (e) {
-        // 保存ダイアログでキャンセルされたときは何もしない
-        if (e instanceof DOMException && e.name === "AbortError") return;
-        throw e;
-      }
-      const writable = await handle.createWritable();
-      await writable.write(text);
-      await writable.close();
-      markSegmentsSaved();
-      return;
-    }
-
-    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = suggestedName;
-    link.click();
-    URL.revokeObjectURL(url);
-    markSegmentsSaved();
+    const saved = await saveFile(
+      `${(filename ?? "labels").replace(/\.wav$/i, "")}.txt`,
+      { description: "ラベルファイル", mimeType: "text/plain", extension: ".txt" },
+      async () => new Blob([text], { type: "text/plain;charset=utf-8" }),
+    );
+    if (saved) markSegmentsSaved();
   };
 
   return {

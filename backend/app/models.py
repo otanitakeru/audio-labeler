@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -68,6 +68,36 @@ class SpeechDetectionResult(BaseModel):
 
     type: Literal["result"] = "result"
     segments: list[DetectedSpeechSegment]
+
+
+class SegmentClip(BaseModel):
+    # wavのファイル名(拡張子を除く)。idの振り方はフロントで決める
+    name: str = Field(pattern=r"^[0-9A-Za-z_-]+$")
+    start_sec: float = Field(ge=0)
+    end_sec: float
+
+    @model_validator(mode="after")
+    def check_range(self) -> "SegmentClip":
+        if self.end_sec <= self.start_sec:
+            raise ValueError("end_sec must be greater than start_sec")
+        return self
+
+
+# 書き出すwavのサンプル形式。Noneのときは元のファイルのまま
+ExportSampleFormat = Literal["pcm16", "pcm24", "float32"]
+
+
+class SegmentExportRequest(BaseModel):
+    # ZIPの中に作るフォルダの名前(元ファイル名から拡張子を除いたもの)
+    folder_name: str = Field(min_length=1, pattern=r"^[^/\\]+$")
+    # Noneのときはすべてのチャンネルを残す
+    channel: int | None = Field(ge=0)
+    # Noneのときは元のまま。元より高い値は受け付けない
+    sample_rate: int | None = Field(gt=0)
+    sample_format: ExportSampleFormat | None
+    clips: list[SegmentClip] = Field(min_length=1)
+    # wavと並べて入れるテキスト(segment.txt・text.txt)。中身はフロントで作る(PLAN.md 5章)
+    text_files: dict[Annotated[str, Field(pattern=r"^[^/\\]+$")], str]
 
 
 class TranscriptionRange(BaseModel):

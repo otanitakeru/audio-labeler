@@ -7,6 +7,7 @@ import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useTranscription } from "../hooks/useTranscription";
 import AlertDialog from "./AlertDialog";
 import ConfirmDialog from "./ConfirmDialog";
+import SegmentExportDialog from "./SegmentExportDialog";
 
 type AppHeaderProps = {
   onOpenSettings: () => void;
@@ -27,11 +28,12 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
     cancelReplace,
   } = useLabelFile();
   // 自動検出・文字起こし中は結果を区間に入れるため、区間を入れ替える読み込みと設定は止める。
-  // 書き出しは区間を変えないので、文字起こしの途中までの結果でもできるようにしておく
+  // 書き出し(ラベル・音声の切り出し)は区間を変えないので、文字起こしの途中までの結果でもできるようにしておく
   const { progress: detectionProgress } = useSpeechDetection();
   const { progress: transcriptionProgress } = useTranscription();
   const isProcessing = detectionProgress !== null || transcriptionProgress !== null;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSegmentExportOpen, setIsSegmentExportOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,6 +114,18 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
               >
                 ラベルを書き出す
               </button>
+
+              <button
+                type="button"
+                disabled={!canExport}
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  setIsSegmentExportOpen(true);
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-transparent"
+              >
+                音声を切り出す
+              </button>
             </div>
           )}
         </div>
@@ -135,6 +149,7 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
         onConfirm={confirmReplace}
         onCancel={cancelReplace}
       />
+      <SegmentExportDialog open={isSegmentExportOpen} onClose={() => setIsSegmentExportOpen(false)} />
     </header>
   );
 }

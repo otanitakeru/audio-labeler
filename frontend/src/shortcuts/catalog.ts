@@ -17,7 +17,8 @@ export type ShortcutId =
   | "nudgeSegmentStartLeft"
   | "nudgeSegmentStartRight"
   | "nudgeSegmentEndLeft"
-  | "nudgeSegmentEndRight";
+  | "nudgeSegmentEndRight"
+  | "detectSpeechInSelectedSegment";
 
 export type KeyCombo = {
   key: string;
@@ -106,6 +107,13 @@ export const SHORTCUT_CATALOG: ShortcutDef[] = [
     label: "終了を右へずらす",
     group: "区間の調整",
     defaultCombo: combo("ArrowRight", { ...PRIMARY_MODIFIER, shift: true }),
+  },
+  // ⌘ + D / Ctrl + D はブラウザでは「ブックマークに追加」だが、このショートカットは選択中の区間がなくてもキーを素通ししないため使える
+  {
+    id: "detectSpeechInSelectedSegment",
+    label: "選択中の区間を自動検出",
+    group: "区間の調整",
+    defaultCombo: combo("d", PRIMARY_MODIFIER),
   },
 ];
 

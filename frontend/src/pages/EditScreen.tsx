@@ -17,6 +17,7 @@ import { usePlaybackSettings } from "../hooks/usePlaybackSettings";
 import { useSegments } from "../hooks/useSegments";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useTranscription } from "../hooks/useTranscription";
+import { useVadSettings } from "../hooks/useVadSettings";
 import { useViewOptions } from "../hooks/useViewOptions";
 import { useWavesurfer } from "../hooks/useWavesurfer";
 import type { Segment } from "../types";
@@ -59,16 +60,18 @@ function EditScreen() {
   } = useDisplaySettings();
   const { editingSettings } = useEditingSettings();
   const { viewOptions } = useViewOptions();
+  const { lastUsedPresets } = useVadSettings();
   const spectrogramHeight = viewOptions.showSpectrogram ? spectrogramHeightSetting : 0;
   const { playbackSettings, setPlaybackRate, setVolume } = usePlaybackSettings();
   const [error, setError] = useState<string | null>(null);
-  const [isChoosingDetectionPreset, setIsChoosingDetectionPreset] = useState(false);
+  // 自動検出のダイアログを開いている間は、ボタンを押したときに選んでいた区間(なければnull)を持つ。閉じているときはundefined
+  const [detectionDialogSegment, setDetectionDialogSegment] = useState<Segment | null | undefined>(undefined);
   const {
     progress: detectionProgress,
     requestDetection,
-    isConfirmingReplaceAll,
-    confirmReplaceAll,
-    cancelReplaceAll,
+    confirmingReplacement: confirmingDetectionReplacement,
+    confirmReplacement: confirmDetectionReplacement,
+    cancelReplacement: cancelDetectionReplacement,
     requestStop: requestDetectionStop,
     isConfirmingStop: isConfirmingDetectionStop,
     confirmStop: confirmDetectionStop,
@@ -110,6 +113,7 @@ function EditScreen() {
     spectrogramMaxFrequency,
     isSpectrogramComputing,
     togglePlay,
+    getSelectedSegment,
     deleteSelectedSegment,
     deselectSegment,
     selectAdjacentSegment,
@@ -151,6 +155,11 @@ function EditScreen() {
     showGridLines: viewOptions.showGridLines,
   });
 
+  // 実行中は再生ボタン・ショートカットを止めていて再生を止められないため、始める前に止めておく
+  const stopPlayback = () => {
+    if (isPlaying) togglePlay();
+  };
+
   useKeyboardShortcuts(
     {
       togglePlay,
@@ -168,14 +177,17 @@ function EditScreen() {
       nudgeSegmentStartRight: (e) => nudgeSelectedSegment("start", "right", e.repeat),
       nudgeSegmentEndLeft: (e) => nudgeSelectedSegment("end", "left", e.repeat),
       nudgeSegmentEndRight: (e) => nudgeSelectedSegment("end", "right", e.repeat),
+      // 区間を選んで続けて検出し直せるよう、ダイアログは出さず「選んだ区間」で前回使ったプリセットで実行する。
+      // 選択中の区間がなくてもfalseを返さない(⌘ + D がブラウザの「ブックマークに追加」にならないように)
+      detectSpeechInSelectedSegment: () => {
+        const selectedSegment = getSelectedSegment();
+        if (!selectedSegment) return;
+        stopPlayback();
+        requestDetection(lastUsedPresets.selectedSegment.id, selectedSegment);
+      },
     },
     isEditingLocked,
   );
-
-  // 実行中は再生ボタン・ショートカットを止めていて再生を止められないため、始める前に止めておく
-  const stopPlayback = () => {
-    if (isPlaying) togglePlay();
-  };
 
   if (!uploadId) return null;
 
@@ -210,7 +222,7 @@ function EditScreen() {
           ) : (
             <Button
               variant="secondary"
-              onClick={() => setIsChoosingDetectionPreset(true)}
+              onClick={() => setDetectionDialogSegment(getSelectedSegment())}
               disabled={!isReady || isUploading || isTranscribing}
             >
               自動検出
@@ -272,13 +284,14 @@ function EditScreen() {
       </div>
 
       <SpeechDetectionDialog
-        open={isChoosingDetectionPreset}
-        onRun={(presetId) => {
-          setIsChoosingDetectionPreset(false);
+        open={detectionDialogSegment !== undefined}
+        selectedSegment={detectionDialogSegment ?? null}
+        onRun={(presetId, targetSegment) => {
+          setDetectionDialogSegment(undefined);
           stopPlayback();
-          requestDetection(presetId);
+          requestDetection(presetId, targetSegment);
         }}
-        onCancel={() => setIsChoosingDetectionPreset(false)}
+        onCancel={() => setDetectionDialogSegment(undefined)}
       />
       <AlertDialog message={error} onClose={() => setError(null)} />
       <AlertDialog message={detectionError} onClose={clearDetectionError} />
@@ -286,12 +299,16 @@ function EditScreen() {
       {/* ヘッダーから読み込んだ音声のエラー。ホーム画面では入力欄の下に出しているが、編集画面には表示する場所がないためダイアログで出す */}
       <AlertDialog message={uploadError} onClose={clearUploadError} />
       <ConfirmDialog
-        open={isConfirmingReplaceAll}
+        open={confirmingDetectionReplacement !== null}
         title="自動検出"
-        message="今の区間をすべて消して、検出結果で置き換えますか?"
+        message={
+          confirmingDetectionReplacement === "targetSegment"
+            ? "選んだ区間のラベルを消して、検出結果で置き換えますか?"
+            : "今の区間をすべて消して、検出結果で置き換えますか?"
+        }
         confirmLabel="置き換える"
-        onConfirm={confirmReplaceAll}
-        onCancel={cancelReplaceAll}
+        onConfirm={confirmDetectionReplacement}
+        onCancel={cancelDetectionReplacement}
       />
       <ConfirmDialog
         open={isConfirmingDetectionStop}

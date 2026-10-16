@@ -1,11 +1,15 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { VadParams, VadPreset, VadSettings } from "../types";
+import type { SpeechDetectionTarget, VadParams, VadPreset, VadSettings } from "../types";
 
 // 検出パラメータは音声の性質に合わせて調整して使い続けるものなので、ショートカット割り当てと同様に
 // リロードしても失われないようlocalStorageへ永続化する
 const STORAGE_KEY = "audio-labeler.vadSettings";
-// 実行時のダイアログと読み込みのダイアログで共通の、前回使ったプリセット(次の初期値にする)
-const LAST_USED_PRESET_STORAGE_KEY = "audio-labeler.lastUsedVadPresetId";
+// 前回使ったプリセット(次の初期値にする)。音声全体は実行時のダイアログと読み込みのダイアログで共通。
+// 音声全体のキーは、対象を分ける前に保存した値をそのまま引き継ぐため変えない
+const LAST_USED_PRESET_STORAGE_KEYS: Record<SpeechDetectionTarget, string> = {
+  wholeAudio: "audio-labeler.lastUsedVadPresetId",
+  selectedSegment: "audio-labeler.lastUsedSegmentVadPresetId",
+};
 
 // 検出パラメータの初期値は、研究室で使ってきたspeech-splitter-with-vad(config/test/vad.yaml)に合わせる。
 // そこで指定していない項目はSilero VADの既定値
@@ -91,43 +95,58 @@ function pickVadParams(saved: Partial<VadParams>): Partial<VadParams> {
   return Object.fromEntries(keys.filter((key) => key in saved).map((key) => [key, saved[key]]));
 }
 
-function loadLastUsedPresetId(): string | null {
+type LastUsedPresetIds = Record<SpeechDetectionTarget, string | null>;
+
+function loadLastUsedPresetIds(): LastUsedPresetIds {
   try {
-    return localStorage.getItem(LAST_USED_PRESET_STORAGE_KEY);
+    return {
+      wholeAudio: localStorage.getItem(LAST_USED_PRESET_STORAGE_KEYS.wholeAudio),
+      selectedSegment: localStorage.getItem(LAST_USED_PRESET_STORAGE_KEYS.selectedSegment),
+    };
   } catch {
-    return null;
+    return { wholeAudio: null, selectedSegment: null };
   }
 }
 
 type VadSettingsState = {
   vadSettings: VadSettings;
   setVadSettings: (settings: VadSettings) => void;
-  // 前回使ったプリセット。消されていたときは先頭のプリセット
-  lastUsedPreset: VadPreset;
-  setLastUsedPresetId: (id: string) => void;
+  // 対象ごとの前回使ったプリセット。消されていたときは先頭のプリセット
+  lastUsedPresets: Record<SpeechDetectionTarget, VadPreset>;
+  setLastUsedPresetId: (target: SpeechDetectionTarget, id: string) => void;
 };
 
 const VadSettingsContext = createContext<VadSettingsState | null>(null);
 
 export function VadSettingsProvider({ children }: { children: ReactNode }) {
   const [vadSettings, setVadSettings] = useState<VadSettings>(loadSettings);
-  const [lastUsedPresetId, setLastUsedPresetId] = useState<string | null>(loadLastUsedPresetId);
+  const [lastUsedPresetIds, setLastUsedPresetIds] = useState<LastUsedPresetIds>(loadLastUsedPresetIds);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(vadSettings));
   }, [vadSettings]);
 
   useEffect(() => {
-    if (lastUsedPresetId !== null) localStorage.setItem(LAST_USED_PRESET_STORAGE_KEY, lastUsedPresetId);
-  }, [lastUsedPresetId]);
+    for (const target of ["wholeAudio", "selectedSegment"] as const) {
+      const id = lastUsedPresetIds[target];
+      if (id !== null) localStorage.setItem(LAST_USED_PRESET_STORAGE_KEYS[target], id);
+    }
+  }, [lastUsedPresetIds]);
 
   return (
     <VadSettingsContext.Provider
       value={{
         vadSettings,
         setVadSettings,
-        lastUsedPreset: findPresetOrFirst(vadSettings.presets, lastUsedPresetId),
-        setLastUsedPresetId,
+        lastUsedPresets: {
+          wholeAudio: findPresetOrFirst(vadSettings.presets, lastUsedPresetIds.wholeAudio),
+          // 選んだ区間で一度も実行していないときは、音声全体で前回使ったものから始める
+          selectedSegment: findPresetOrFirst(
+            vadSettings.presets,
+            lastUsedPresetIds.selectedSegment ?? lastUsedPresetIds.wholeAudio,
+          ),
+        },
+        setLastUsedPresetId: (target, id) => setLastUsedPresetIds((prev) => ({ ...prev, [target]: id })),
       }}
     >
       {children}

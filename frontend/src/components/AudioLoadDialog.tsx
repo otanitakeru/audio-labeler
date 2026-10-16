@@ -40,8 +40,8 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
   const [labelFile, setLabelFile] = useState<LabelFileSelection | null>(null);
   const [processing, setProcessing] = useState(lastChoices.afterLoadProcessing);
   // 前回使ったプリセットは編集画面の「自動検出」ボタンと共通なので、読み込みの選択(lastChoices)とは別に持つ
-  const { vadSettings, lastUsedPreset } = useVadSettings();
-  const [vadPresetId, setVadPresetId] = useState(lastUsedPreset.id);
+  const { vadSettings, lastUsedPresets } = useVadSettings();
+  const [vadPresetId, setVadPresetId] = useState(lastUsedPresets.wholeAudio.id);
 
   const hasLabels = labelFile !== null;
   // ラベルファイルを外したときに元の選択へ戻せるよう、選択そのものは書き換えずに表示と読み込みだけ読み替える

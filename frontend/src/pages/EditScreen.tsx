@@ -13,6 +13,7 @@ import { useAudioSession } from "../hooks/useAudioSession";
 import { useDisplaySettings } from "../hooks/useDisplaySettings";
 import { useEditingSettings } from "../hooks/useEditingSettings";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { usePlaybackSettings } from "../hooks/usePlaybackSettings";
 import { useSegments } from "../hooks/useSegments";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useTranscription } from "../hooks/useTranscription";
@@ -51,6 +52,7 @@ function EditScreen() {
   const { mainWaveformHeight, minimapHeight, playbackScrollMode } = useDisplaySettings();
   const { editingSettings } = useEditingSettings();
   const { viewOptions } = useViewOptions();
+  const { playbackSettings, setPlaybackRate, setVolume } = usePlaybackSettings();
   const [error, setError] = useState<string | null>(null);
   const [isChoosingDetectionPreset, setIsChoosingDetectionPreset] = useState(false);
   const {
@@ -123,6 +125,8 @@ function EditScreen() {
     mainWaveformHeight,
     minimapHeight,
     playbackScrollMode,
+    playbackRate: playbackSettings.playbackRate,
+    volume: playbackSettings.volume,
     segmentNudgeStepMs: editingSettings.segmentNudgeStepMs,
     amplitudeAxisRef,
     editingLocked: isEditingLocked,
@@ -175,6 +179,10 @@ function EditScreen() {
           currentTime={currentTime}
           duration={duration}
           onTogglePlay={togglePlay}
+          playbackRate={playbackSettings.playbackRate}
+          onPlaybackRateChange={setPlaybackRate}
+          volume={playbackSettings.volume}
+          onVolumeChange={setVolume}
         />
         <div className="flex items-center gap-3">
           {detectionProgress ? (

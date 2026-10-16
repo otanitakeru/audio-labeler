@@ -459,6 +459,10 @@ type UseWavesurferOptions = {
   mainWaveformHeight: number;
   minimapHeight: number;
   playbackScrollMode: PlaybackScrollMode;
+  // 再生の速さ(1が等速)。音の高さは変えない
+  playbackRate: number;
+  // 再生の音量(1が元の音量)。1より大きいと増幅する
+  volume: number;
   // ショートカットで区間の開始・終了を1回ずらす量(ミリ秒)。ドラッグでは合わせにくい細かい調整に使う
   segmentNudgeStepMs: number;
   // 縦の目盛り(AmplitudeAxis)上でのCmd/Ctrl+スクロールをverticalZoomに反映するための参照
@@ -516,6 +520,8 @@ export function useWavesurfer(
     mainWaveformHeight,
     minimapHeight,
     playbackScrollMode,
+    playbackRate,
+    volume,
     segmentNudgeStepMs,
     amplitudeAxisRef,
     editingLocked,
@@ -527,6 +533,8 @@ export function useWavesurfer(
 ): UseWavesurferResult {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
+  // 再生の音を通して音量を変えるノード。ブラウザ標準の音量(media.volume)は100%が上限で増幅できないため
+  const gainNodeRef = useRef<GainNode | null>(null);
   // 波形上のドラッグ選択で作られる選択範囲。確定済み区間とは別物で、同時に1つだけ。
   // ラベル入力(startLabelingSelection)や、将来の範囲再生の対象になるため、ラベル入力とは独立した状態として持つ
   const selectionRegionRef = useRef<Region | null>(null);
@@ -640,6 +648,17 @@ export function useWavesurfer(
     wavesurferRef.current = wavesurfer;
     regionsRef.current = regions;
 
+    // 速さは音の高さを保てる標準の再生(media要素)のまま変えたいため、wavesurferのWebAudio再生には切り替えず、
+    // media要素の音をGainNodeに通して増幅する。wavesurferは取得した音声をblob URLにして再生するため、
+    // バックエンドが別オリジンでも音を取り出せる(別オリジンのURLを直接再生していると無音になる)
+    const audioContext = new AudioContext();
+    const gainNode = audioContext.createGain();
+    audioContext
+      .createMediaElementSource(wavesurfer.getMediaElement())
+      .connect(gainNode)
+      .connect(audioContext.destination);
+    gainNodeRef.current = gainNode;
+
     // 波形の描画領域(height)の下にラベル領域ぶんの余白を足す。区間(Region)のコンテナはwrapper全体を覆うため
     // ラベル帯・調整帯はこの余白に収まり、縦方向に拡大しても波形がラベルに被らない
     wavesurfer.getWrapper().style.paddingBottom = `${LABEL_AREA_HEIGHT_PX}px`;
@@ -696,7 +715,11 @@ export function useWavesurfer(
     });
     // 音声を切り替えたときの取得の中断は、destroy()でリスナーが外れた後に起きるためここには届かない
     wavesurfer.on("error", () => setIsLoadFailed(true));
-    wavesurfer.on("play", () => setIsPlaying(true));
+    wavesurfer.on("play", () => {
+      // ブラウザは操作を受ける前に作ったAudioContextを止めた状態にしておき、そのままでは音が出ないため、再生のたびに動かす
+      void audioContext.resume();
+      setIsPlaying(true);
+    });
     wavesurfer.on("pause", () => setIsPlaying(false));
     wavesurfer.on("finish", () => setIsPlaying(false));
     wavesurfer.on("timeupdate", (time) => setCurrentTime(time));
@@ -708,8 +731,10 @@ export function useWavesurfer(
       detectionPreviewLayerRef.current = null;
       disableDragSelection();
       wavesurfer.destroy();
+      void audioContext.close();
       wavesurferRef.current = null;
       regionsRef.current = null;
+      gainNodeRef.current = null;
       selectionRegionRef.current = null;
       labelingRef.current = null;
       activeSegmentRef.current = null;
@@ -1000,6 +1025,17 @@ export function useWavesurfer(
     if (!isReady) return;
     wavesurferRef.current?.setOptions(getPlaybackScrollOptions(playbackScrollMode));
   }, [playbackScrollMode, isReady]);
+
+  // 音声の読み込みでmedia要素の速さは等速に戻るため、読み込み後(isReady)にも当て直す
+  useEffect(() => {
+    if (!isReady) return;
+    wavesurferRef.current?.setPlaybackRate(playbackRate, true);
+  }, [playbackRate, isReady]);
+
+  useEffect(() => {
+    if (!isReady || !gainNodeRef.current) return;
+    gainNodeRef.current.gain.value = volume;
+  }, [volume, isReady]);
 
   // 横方向の拡大率(1秒あたりのピクセル数)が変わるたびに反映する。ホイール由来のズームなら、
   // wavesurfer標準の「再生位置を固定する」スクロール補正を上書きし、カーソル下の位置が動かないようにする

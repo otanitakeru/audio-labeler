@@ -26,6 +26,8 @@ export async function detectSpeech(
   uploadId: string,
   channel: number,
   params: VadParams,
+  // 選んだ区間の中だけ検出し直すときの範囲。nullのときは音声全体。範囲の中でも、秒は元の音声の位置で返る
+  range: DetectedRange | null,
   onProgress: (percent: number, newSpeechRanges: DetectedRange[]) => void,
   // 中止したときは接続を切る。バックエンドは検出を途中でやめる
   signal: AbortSignal,
@@ -48,6 +50,7 @@ export async function detectSpeech(
         use_max_poss_sil_at_max_speech: params.useMaxPossibleSilenceAtMaxSpeech,
         min_silence_duration_ms_after_vad: params.minSilenceAfterVadMs,
       },
+      range: range && { start_sec: range.startSec, end_sec: range.endSec },
     }),
   });
   if (!res.ok || !res.body) throw new Error("failed to detect speech");

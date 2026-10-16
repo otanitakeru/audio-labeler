@@ -41,9 +41,22 @@ class VadParams(BaseModel):
         return self
 
 
+class SpeechDetectionRange(BaseModel):
+    start_sec: float = Field(ge=0)
+    end_sec: float
+
+    @model_validator(mode="after")
+    def check_range(self) -> "SpeechDetectionRange":
+        if self.end_sec <= self.start_sec:
+            raise ValueError("end_sec must be greater than start_sec")
+        return self
+
+
 class DetectSpeechRequest(BaseModel):
     channel: int = Field(ge=0)
     params: VadParams
+    # 選んだ区間の中だけ検出し直すときの範囲。Noneのときは音声全体
+    range: SpeechDetectionRange | None = None
 
 
 class DetectedSpeechSegment(BaseModel):

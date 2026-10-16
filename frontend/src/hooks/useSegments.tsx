@@ -23,6 +23,8 @@ type SegmentsState = {
     ranges: Pick<Segment, "startSec" | "endSec">[],
     mode: ExistingSegmentsMode,
   ) => SegmentMutationResult;
+  // 選んだ区間の中だけ検出し直した結果で、その区間を置き換える(ラベルは空)。rangesは区間の範囲の中にあること
+  replaceSegmentWithDetected: (id: string, ranges: Pick<Segment, "startSec" | "endSec">[]) => SegmentMutationResult;
   // 文字起こしの結果をラベルとして入れる。
   // 1回の実行では同じhistoryGroupKeyを渡し、届いた順に入れた結果を履歴上1つの操作にまとめる
   applyTranscribedLabel: (id: string, label: string, historyGroupKey: string) => void;
@@ -70,7 +72,7 @@ function findRangeError(
   return null;
 }
 
-// 区間の一覧をまとめて入れられるか検証する(ラベルファイルの読み込み・自動検出のreplaceAll)。エラーがあればメッセージを返す
+// 区間の一覧をまとめて入れられるか検証する(ラベルファイルの読み込み・自動検出のreplaceAll・選んだ区間の検出し直し)。エラーがあればメッセージを返す
 export function findLabeledRangesError(ranges: Pick<Segment, "startSec" | "endSec">[]): string | null {
   const sorted = [...ranges].sort((a, b) => a.startSec - b.startSec);
   for (let i = 0; i < sorted.length; i++) {
@@ -241,6 +243,20 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
     return { success: true };
   }
 
+  // 範囲の中は置き換える区間しかない(区間は重ならない)ため、範囲の中に収まっていれば他の区間とは重ならないが、
+  // 他の操作と同じく検証は通す。自動検出中は区間の編集を止めているため、実行を始めた時点の区間と比べてよい
+  function replaceSegmentWithDetected(
+    id: string,
+    ranges: Pick<Segment, "startSec" | "endSec">[],
+  ): SegmentMutationResult {
+    const others = segments.filter((s) => s.id !== id);
+    const error = findLabeledRangesError([...others, ...ranges]);
+    if (error) return { success: false, error };
+    const detected = toSortedSegments(ranges.map((r) => ({ ...r, label: "" })));
+    commitSegments((prev) => [...prev.filter((s) => s.id !== id), ...detected]);
+    return { success: true };
+  }
+
   // 結果は届いた順に1件ずつ入れるが、同じhistoryGroupKeyでまとめるため、1回の実行分を元に戻す1回で戻せる。
   // 文字起こし中は区間の編集を止めているため、実行を始めた時点の区間にそのまま入れてよい
   function applyTranscribedLabel(id: string, label: string, historyGroupKey: string): void {
@@ -271,6 +287,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
         replaceSegments,
         resetSegments,
         applyDetectedSegments,
+        replaceSegmentWithDetected,
         applyTranscribedLabel,
         undo,
         redo,

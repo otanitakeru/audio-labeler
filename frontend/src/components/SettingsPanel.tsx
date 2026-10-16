@@ -97,7 +97,7 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
     setPlaybackScrollMode,
   } = useDisplaySettings();
   const { bindings, setBindings } = useShortcutBindings();
-  const { vadSettings, setVadSettings, lastUsedPreset } = useVadSettings();
+  const { vadSettings, setVadSettings, lastUsedPresets } = useVadSettings();
   const { editingSettings, setEditingSettings } = useEditingSettings();
   const { transcriptionSettings, setTranscriptionSettings } = useTranscriptionSettings();
 
@@ -109,8 +109,8 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [draftPlaybackScrollMode, setDraftPlaybackScrollMode] = useState(playbackScrollMode);
   const [draftBindings, setDraftBindings] = useState(bindings);
   const [draftVadSettings, setDraftVadSettings] = useState(vadSettings);
-  // 開いたときは、いつも使っているものを直しやすいよう前回使ったプリセットを出す
-  const [editingVadPresetId, setEditingVadPresetId] = useState(lastUsedPreset.id);
+  // 開いたときは、いつも使っているものを直しやすいよう前回使ったプリセット(音声全体のほう)を出す
+  const [editingVadPresetId, setEditingVadPresetId] = useState(lastUsedPresets.wholeAudio.id);
   const [draftEditingSettings, setDraftEditingSettings] = useState(editingSettings);
   const [draftTranscriptionSettings, setDraftTranscriptionSettings] = useState(transcriptionSettings);
 

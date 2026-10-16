@@ -15,15 +15,24 @@ type SpeechDetectionProgress = {
   speechRanges: Pick<Segment, "startSec" | "endSec">[];
 };
 
+// 置き換える前に確認を求めている内容
+// - allSegments: 既にある区間をすべて消す設定(replaceAll)で、区間がある
+// - targetSegment: 選んだ区間の中だけ検出し直すときに、その区間にラベルがある(置き換えるとラベルが消える)
+export type SpeechDetectionReplacement = "allSegments" | "targetSegment";
+
+type PendingDetection = { params: VadParams; targetSegment: Segment | null };
+
 type SpeechDetectionState = {
   // 実行中でなければnull。実行中は区間を変える操作(編集画面・ヘッダーのラベル/音声の読み込み)をすべて止める
   progress: SpeechDetectionProgress | null;
-  // 指定したプリセットで実行し、次の初期値として覚える。既にある区間をすべて消す設定(replaceAll)で区間があるときは、
-  // すぐには実行せず確認を求める
-  requestDetection: (presetId: string) => void;
-  isConfirmingReplaceAll: boolean;
-  confirmReplaceAll: () => void;
-  cancelReplaceAll: () => void;
+  // 指定したプリセットで実行し、次の初期値として(音声全体と選んだ区間で別々に)覚える。
+  // targetSegmentを渡すとその区間の中だけ検出し、結果で区間を置き換える。
+  // 置き換えで区間やラベルが消えるときは、すぐには実行せず確認を求める
+  requestDetection: (presetId: string, targetSegment: Segment | null) => void;
+  // 確認を求めていなければnull
+  confirmingReplacement: SpeechDetectionReplacement | null;
+  confirmReplacement: () => void;
+  cancelReplacement: () => void;
   // 中止する。文字起こしと同じく、誤って押しても止まらないよう、すぐには止めず確認を求める
   requestStop: () => void;
   isConfirmingStop: boolean;
@@ -39,16 +48,18 @@ const SpeechDetectionContext = createContext<SpeechDetectionState | null>(null);
 // 実行中は編集画面だけでなくヘッダーの操作も止めるため、状態をContextで共有する
 export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
   const { uploadId, channel } = useAudioSession();
-  const { segments, applyDetectedSegments } = useSegments();
+  const { segments, applyDetectedSegments, replaceSegmentWithDetected } = useSegments();
   const { vadSettings, setLastUsedPresetId } = useVadSettings();
   const [progress, setProgress] = useState<SpeechDetectionProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // 置き換えの確認中に、確認が済んだら使うパラメータ。確認中でなければnull
-  const [paramsPendingReplaceAll, setParamsPendingReplaceAll] = useState<VadParams | null>(null);
+  // 置き換えの確認中に、確認が済んだら実行する内容。確認中でなければnull
+  const [pendingReplacement, setPendingReplacement] = useState<
+    (PendingDetection & { replacement: SpeechDetectionReplacement }) | null
+  >(null);
   const [isConfirmingStop, setIsConfirmingStop] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const runDetection = async (params: VadParams) => {
+  const runDetection = async ({ params, targetSegment }: PendingDetection) => {
     if (!uploadId) return;
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -59,6 +70,7 @@ export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
         uploadId,
         channel,
         params,
+        targetSegment,
         (percent, newSpeechRanges) =>
           setProgress((prev) => ({
             phase: "detecting",
@@ -74,7 +86,10 @@ export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
         setError("発話区間が見つかりませんでした。プリセットの「しきい値」を下げると検出されやすくなります。");
         return;
       }
-      const result = applyDetectedSegments(ranges, vadSettings.existingSegmentsMode);
+      // 選んだ区間の中には他の区間がないため、「既にある区間」の設定は使わない
+      const result = targetSegment
+        ? replaceSegmentWithDetected(targetSegment.id, ranges)
+        : applyDetectedSegments(ranges, vadSettings.existingSegmentsMode);
       if (!result.success) setError(result.error);
     } catch {
       // 中止は利用者の操作なので、エラーとしては知らせない
@@ -88,14 +103,21 @@ export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const requestDetection = (presetId: string) => {
+  const requestDetection = (presetId: string, targetSegment: Segment | null) => {
     const preset = findPresetOrFirst(vadSettings.presets, presetId);
-    setLastUsedPresetId(preset.id);
-    if (vadSettings.existingSegmentsMode === "replaceAll" && segments.length > 0) {
-      setParamsPendingReplaceAll(preset.params);
+    setLastUsedPresetId(targetSegment ? "selectedSegment" : "wholeAudio", preset.id);
+    const detection = { params: preset.params, targetSegment };
+    let replacement: SpeechDetectionReplacement | null = null;
+    if (targetSegment) {
+      if (targetSegment.label !== "") replacement = "targetSegment";
+    } else if (vadSettings.existingSegmentsMode === "replaceAll" && segments.length > 0) {
+      replacement = "allSegments";
+    }
+    if (replacement) {
+      setPendingReplacement({ ...detection, replacement });
       return;
     }
-    runDetection(preset.params);
+    runDetection(detection);
   };
 
   return (
@@ -103,12 +125,12 @@ export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
       value={{
         progress,
         requestDetection,
-        isConfirmingReplaceAll: paramsPendingReplaceAll !== null,
-        confirmReplaceAll: () => {
-          setParamsPendingReplaceAll(null);
-          if (paramsPendingReplaceAll) runDetection(paramsPendingReplaceAll);
+        confirmingReplacement: pendingReplacement?.replacement ?? null,
+        confirmReplacement: () => {
+          setPendingReplacement(null);
+          if (pendingReplacement) runDetection(pendingReplacement);
         },
-        cancelReplaceAll: () => setParamsPendingReplaceAll(null),
+        cancelReplacement: () => setPendingReplacement(null),
         requestStop: () => setIsConfirmingStop(true),
         isConfirmingStop,
         confirmStop: () => {

@@ -103,7 +103,7 @@ export function AudioFileOpenerProvider({ children }: { children: ReactNode }) {
     if (!afterLoadTask || afterLoadTask.uploadId !== uploadId) return;
     if (afterLoadTask.step === "speechDetection") {
       // 読み込み直後で区間は空のため、「すべて置き換える」の確認は出ずにすぐ始まる
-      requestDetection(afterLoadTask.vadPresetId);
+      requestDetection(afterLoadTask.vadPresetId, null);
       setAfterLoadTask({ ...afterLoadTask, step: "waitingSpeechDetection" });
       return;
     }

@@ -580,6 +580,8 @@ type UseWavesurferResult = {
   // スペクトログラムを計算している間(表示したのに、まだ描けていない間)
   isSpectrogramComputing: boolean;
   togglePlay: () => void;
+  // 選択中の区間。なければnull
+  getSelectedSegment: () => Segment | null;
   // 選択中の区間がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   deleteSelectedSegment: () => boolean;
   deselectSegment: () => boolean;
@@ -1286,6 +1288,12 @@ export function useWavesurfer(
     else void wavesurfer.play();
   };
 
+  // 選択中の区間は操作のたびにrefで控えているだけでstateにはしていないため、使う時点で取り出す
+  const getSelectedSegment = () => {
+    const activeId = activeSegmentRef.current?.id;
+    return (activeId && segmentsRef.current.find((s) => s.id === activeId)) || null;
+  };
+
   const deleteSelectedSegment = () => {
     const active = activeSegmentRef.current;
     if (!active) return false;
@@ -1437,6 +1445,7 @@ export function useWavesurfer(
     spectrogramMaxFrequency: getMaxDisplayFrequency(decodedSampleRate),
     isSpectrogramComputing,
     togglePlay,
+    getSelectedSegment,
     deleteSelectedSegment,
     deselectSegment,
     selectAdjacentSegment,

@@ -6,7 +6,7 @@ import torch
 from silero_vad import get_speech_timestamps, load_silero_vad
 from torchaudio.functional import resample
 
-from app.models import VadParams
+from app.models import SpeechDetectionRange, VadParams
 
 _model = None
 # モデルは推論のたびに内部状態をリセットして使うため、同時に複数のリクエストから使われないよう排他する
@@ -47,14 +47,26 @@ def detect_speech(
     samples: np.ndarray,
     sample_rate: int,
     params: VadParams,
+    detection_range: SpeechDetectionRange | None,
     on_progress: Callable[[int], None],
     on_speech_found: Callable[[float, float], None],
     cancelled: threading.Event,
 ) -> list[tuple[float, float]]:
     """モノラル波形から発話区間を検出し、(開始秒, 終了秒)の一覧を返す。
+    detection_rangeを渡すとその範囲の中だけを検出する(秒は範囲の中でも元の音声の位置で返す)。
     途中経過として、進み具合(0〜100%)をon_progressで、判定済みの範囲で発話らしさがしきい値を超えた部分(開始秒, 終了秒)を
     on_speech_foundで知らせる。後者は区間の切り出し(最短の発話・余白など)を当てはめる前の値なので、戻り値の区間とはずれる。
     cancelledが立ったらSpeechDetectionCancelledを投げて途中でやめる"""
+    # 返す秒に足す位置と、返す区間の上限(範囲の中での秒)
+    offset_sec = 0.0
+    duration_sec = len(samples) / sample_rate
+    if detection_range is not None:
+        # スライスはコピーを作らない(numpyのview)
+        samples = samples[int(detection_range.start_sec * sample_rate) : int(detection_range.end_sec * sample_rate)]
+        # サンプル位置への丸めで範囲のわずかに外の時刻にならないよう、範囲の秒をそのまま基準にする
+        # (隣の区間とぴったり接していると、外にはみ出した分だけ重なってしまうため)
+        offset_sec = detection_range.start_sec
+        duration_sec = detection_range.end_sec - detection_range.start_sec
     # Silero VADは8kHzか16kHzの音声しか受け付けないため、指定されたレートへリサンプリングしてから渡す
     vad_sample_rate = params.sampling_rate
     # 既にfloat32なら(read_channelの既定)、長い音声で全体のコピーを作らないようにそのまま使う
@@ -82,7 +94,7 @@ def detect_speech(
             if is_speech and speech_start_sec is None:
                 speech_start_sec = window_start_sec
             elif not is_speech and speech_start_sec is not None:
-                on_speech_found(speech_start_sec, window_start_sec)
+                on_speech_found(offset_sec + speech_start_sec, offset_sec + window_start_sec)
                 speech_start_sec = None
             on_progress(int(percent))
 
@@ -101,9 +113,11 @@ def detect_speech(
             use_max_poss_sil_at_max_speech=params.use_max_poss_sil_at_max_speech,
             progress_tracking_callback=track_progress,
         )
-    # リサンプリング後のサンプル数の丸めで、末尾の区間が元の音声の長さをわずかに超えることがあるため切り詰める
-    duration_sec = len(samples) / sample_rate
-    segments = [(t["start"] / vad_sample_rate, min(t["end"] / vad_sample_rate, duration_sec)) for t in timestamps]
+    # リサンプリング後のサンプル数の丸めで、末尾の区間が元の音声(範囲)の長さをわずかに超えることがあるため切り詰める
+    segments = [
+        (offset_sec + t["start"] / vad_sample_rate, offset_sec + min(t["end"] / vad_sample_rate, duration_sec))
+        for t in timestamps
+    ]
     return _merge_close_segments(segments, params.min_silence_duration_ms_after_vad / 1000)
 
 

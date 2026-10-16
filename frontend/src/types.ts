@@ -45,6 +45,11 @@ export type SegmentDirection = "previous" | "next";
 // - keepExisting: 既にある区間は残し、検出結果のうち重ならない区間だけを足す
 export type ExistingSegmentsMode = "replaceAll" | "keepExisting";
 
+// 自動検出(VAD)の対象。目的が違い使うプリセットも変わるため、前回使ったプリセットは対象ごとに覚える
+// - wholeAudio: 音声全体
+// - selectedSegment: 選んだ区間の中だけ(結果で区間を置き換える)
+export type SpeechDetectionTarget = "wholeAudio" | "selectedSegment";
+
 // 自動検出(VAD)の検出パラメータ。バックエンドのVadParams(silero_vad.get_speech_timestampsの引数)と対応する
 export type VadParams = {
   samplingRate: 8000 | 16000;

@@ -51,7 +51,14 @@ def detect_speech_segments(upload_id: str, request: DetectSpeechRequest, http_re
         # 推論はCPUを長く使うため、スレッドプールで実行し、その間に進み具合を送る
         task = asyncio.ensure_future(
             run_in_threadpool(
-                detect_speech, samples, sample_rate, request.params, on_progress, on_speech_found, cancelled
+                detect_speech,
+                samples,
+                sample_rate,
+                request.params,
+                request.range,
+                on_progress,
+                on_speech_found,
+                cancelled,
             )
         )
         try:

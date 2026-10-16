@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AudioFileDetails from "./AudioFileDetails";
 import Button from "./Button";
 import ChannelInput from "./ChannelInput";
@@ -6,6 +6,7 @@ import Dialog from "./Dialog";
 import { Radio } from "./SettingFields";
 import VadPresetSelect from "./VadPresetSelect";
 import type { AudioLoadOptions } from "../hooks/useAudioFileOpener";
+import type { AudioUploadProgress } from "../hooks/useAudioSession";
 import { readLabelFile } from "../hooks/useLabelFile";
 import { useLastAudioLoadChoices } from "../hooks/useLastAudioLoadChoices";
 import { useVadSettings } from "../hooks/useVadSettings";
@@ -42,6 +43,12 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
   // 前回使ったプリセットは編集画面の「自動検出」ボタンと共通なので、読み込みの選択(lastChoices)とは別に持つ
   const { vadSettings, lastUsedPresets } = useVadSettings();
   const [vadPresetId, setVadPresetId] = useState(lastUsedPresets.wholeAudio.id);
+  // アップロード中の表示から切り替わったときは、ダイアログはもう開いていてDialog側でフォーカスを当て直さないため、
+  // ここで「読み込む」ボタンに当て、そのままEnterで読み込めるようにする
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    formRef.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+  }, []);
 
   const hasLabels = labelFile !== null;
   // ラベルファイルを外したときに元の選択へ戻せるよう、選択そのものは書き換えずに表示と読み込みだけ読み替える
@@ -62,6 +69,7 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
 
   return (
     <form
+      ref={formRef}
       className="flex w-[min(480px,85vw)] flex-col gap-6"
       onSubmit={(e) => {
         e.preventDefault();
@@ -162,19 +170,69 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
   );
 }
 
-type AudioLoadDialogProps = {
-  // アップロード済みで、読み込み方を決めてもらう音声。nullのときは閉じている
-  info: AudioFileInfo | null;
-  onLoad: (options: AudioLoadOptions) => void;
+type AudioUploadingViewProps = {
+  progress: AudioUploadProgress;
   onCancel: () => void;
 };
 
-// 音声を読み込む前に、チャンネル・既存のラベル・読み込み後の処理をまとめて決めるダイアログ(PLAN.md 4章-1)。
-// 各項目の初期値は前回選んだ内容にし、変えるものがなければEnterで読み込めるようにする
-function AudioLoadDialog({ info, onLoad, onCancel }: AudioLoadDialogProps) {
+// アップロードが終わるまでの表示。大きなファイルでは数十秒かかるため、ファイルを選んだらすぐにダイアログを開き、
+// 進み具合を出す(何も出さないと、ファイルを選べなかったように見えるため)
+function AudioUploadingView({ progress, onCancel }: AudioUploadingViewProps) {
+  const isSent = progress.sentRatio >= 1;
   return (
-    <Dialog open={info !== null} title="音声を読み込む" onClose={onCancel}>
-      {info && <AudioLoadForm info={info} onLoad={onLoad} onCancel={onCancel} />}
+    <div className="flex w-[min(480px,85vw)] flex-col gap-6">
+      <div className="text-gray-900">{progress.filename}</div>
+      <div className="flex flex-col gap-2">
+        <div className="h-2 overflow-hidden rounded-full bg-gray-200">
+          <div
+            // 送り終えた後(バックエンドの保存・確認を待つ間)は進み具合が分からないため、満たしたままゆっくり濃淡を変え、
+            // 止まっていないことを示す
+            className={`h-full bg-gray-900 transition-[width] duration-200 ${isSent ? "animate-pulse" : ""}`}
+            style={{ width: `${progress.sentRatio * 100}%` }}
+          />
+        </div>
+        <div className="text-sm text-gray-500">
+          {isSent ? "ファイルを確認中..." : `アップロード中... ${Math.floor(progress.sentRatio * 100)}%`}
+        </div>
+      </div>
+      <div className="flex justify-end gap-3">
+        <Button variant="secondary" onClick={onCancel}>
+          キャンセル
+        </Button>
+        {/* アップロード後に出す欄と同じ位置に、押せない状態で置いておく(終わったときにボタンの位置が動かないように) */}
+        <Button variant="primary" disabled>
+          読み込む
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+type AudioLoadDialogProps = {
+  // アップロード中の進み具合。アップロードしていなければnull
+  uploadProgress: AudioUploadProgress | null;
+  // アップロード済みで、読み込み方を決めてもらう音声。アップロード中・閉じているときはnull
+  info: AudioFileInfo | null;
+  onLoad: (options: AudioLoadOptions) => void;
+  onCancel: () => void;
+  onCancelUpload: () => void;
+};
+
+// 音声を読み込む前に、チャンネル・既存のラベル・読み込み後の処理をまとめて決めるダイアログ(PLAN.md 4章-1)。
+// ファイルを選んだらすぐに開き、アップロードが終わるまでは進み具合を、終わったら各項目を出す。
+// 各項目の初期値は前回選んだ内容にし、変えるものがなければEnterで読み込めるようにする
+function AudioLoadDialog({ uploadProgress, info, onLoad, onCancel, onCancelUpload }: AudioLoadDialogProps) {
+  return (
+    <Dialog
+      open={uploadProgress !== null || info !== null}
+      title="音声を読み込む"
+      onClose={info ? onCancel : onCancelUpload}
+    >
+      {info ? (
+        <AudioLoadForm info={info} onLoad={onLoad} onCancel={onCancel} />
+      ) : (
+        uploadProgress && <AudioUploadingView progress={uploadProgress} onCancel={onCancelUpload} />
+      )}
     </Dialog>
   );
 }

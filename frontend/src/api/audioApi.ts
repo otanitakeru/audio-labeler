@@ -16,20 +16,35 @@ type UploadedAudioInfoResponse = {
 // WAV以外・壊れたファイルなど、利用者が直せるエラー。バックエンドが返す文言をそのまま見せる
 export class AudioUploadRequestError extends Error {}
 
-export async function uploadAudioFile(file: File): Promise<AudioFileInfo> {
+// onProgressには、ファイルを送り終えた割合(0〜1)を渡す。1になった後は、バックエンドが保存・確認を終えて返すのを待つ。
+// fetchでは送った量が分からないため、XMLHttpRequestで送る。signalで中止すると、AbortErrorのDOMExceptionで失敗する
+export async function uploadAudioFile(
+  file: File,
+  onProgress: (sentRatio: number) => void,
+  signal: AbortSignal,
+): Promise<AudioFileInfo> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API_BASE_URL}/api/audio/uploads`, {
-    method: "POST",
-    body: formData,
+  const xhr = new XMLHttpRequest();
+  const response = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+    xhr.open("POST", `${API_BASE_URL}/api/audio/uploads`);
+    xhr.responseType = "json";
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total);
+    });
+    xhr.addEventListener("load", () => resolve({ status: xhr.status, body: xhr.response }));
+    xhr.addEventListener("error", () => reject(new Error("failed to upload audio file")));
+    xhr.addEventListener("abort", () => reject(new DOMException("upload aborted", "AbortError")));
+    signal.addEventListener("abort", () => xhr.abort());
+    xhr.send(formData);
   });
-  if (res.status === 400) {
-    const { detail }: { detail: string } = await res.json();
+  if (response.status === 400) {
+    const { detail } = response.body as { detail: string };
     throw new AudioUploadRequestError(detail);
   }
-  if (!res.ok) throw new Error("failed to upload audio file");
-  const data: UploadedAudioInfoResponse = await res.json();
+  if (response.status < 200 || response.status >= 300) throw new Error("failed to upload audio file");
+  const data = response.body as UploadedAudioInfoResponse;
   return {
     uploadId: data.upload_id,
     filename: data.filename,

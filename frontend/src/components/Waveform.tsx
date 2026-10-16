@@ -27,17 +27,17 @@ function Waveform({
   isSpectrogramComputing,
   isProcessing,
 }: WaveformProps) {
-  // 全体波形の下に、useWavesurfer側で時間の目盛りの帯を置いている
-  const mainWaveformTop = minimapHeight + TIME_AXIS_HEIGHT_PX;
-  const spectrogramTop = mainWaveformTop + mainWaveformHeight;
+  // メイン波形の下に、useWavesurfer側で時間の目盛りの帯を置いている
+  const spectrogramTop = minimapHeight + mainWaveformHeight + TIME_AXIS_HEIGHT_PX;
   const labelAreaTop = spectrogramTop + spectrogramHeight;
   return (
     <div
       className={`flex min-h-25 gap-2 rounded-lg border border-gray-300 bg-white p-4 ${isProcessing ? "animate-border-pulse" : ""}`}
     >
       <div className="flex w-14 shrink-0 flex-col">
-        <div style={{ height: mainWaveformTop }} />
+        <div style={{ height: minimapHeight }} />
         <AmplitudeAxis ref={amplitudeAxisRef} peakAmplitude={peakAmplitude} mainWaveformHeight={mainWaveformHeight} />
+        <div style={{ height: TIME_AXIS_HEIGHT_PX }} />
         {spectrogramHeight > 0 && <FrequencyAxis maxFrequency={spectrogramMaxFrequency} height={spectrogramHeight} />}
       </div>
       <div className="relative min-w-0 flex-1">

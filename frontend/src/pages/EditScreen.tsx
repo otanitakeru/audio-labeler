@@ -6,6 +6,7 @@ import AudioFileDetails from "../components/AudioFileDetails";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ProgressButton from "../components/ProgressButton";
+import SpeechDetectionDialog from "../components/SpeechDetectionDialog";
 import TransportControls from "../components/TransportControls";
 import Waveform from "../components/Waveform";
 import { useAudioSession } from "../hooks/useAudioSession";
@@ -51,6 +52,7 @@ function EditScreen() {
   const { editingSettings } = useEditingSettings();
   const { viewOptions } = useViewOptions();
   const [error, setError] = useState<string | null>(null);
+  const [isChoosingDetectionPreset, setIsChoosingDetectionPreset] = useState(false);
   const {
     progress: detectionProgress,
     requestDetection,
@@ -185,10 +187,7 @@ function EditScreen() {
           ) : (
             <Button
               variant="secondary"
-              onClick={() => {
-                stopPlayback();
-                requestDetection();
-              }}
+              onClick={() => setIsChoosingDetectionPreset(true)}
               disabled={!isReady || isUploading || isTranscribing}
             >
               自動検出
@@ -246,6 +245,15 @@ function EditScreen() {
         )}
       </div>
 
+      <SpeechDetectionDialog
+        open={isChoosingDetectionPreset}
+        onRun={(presetId) => {
+          setIsChoosingDetectionPreset(false);
+          stopPlayback();
+          requestDetection(presetId);
+        }}
+        onCancel={() => setIsChoosingDetectionPreset(false)}
+      />
       <AlertDialog message={error} onClose={() => setError(null)} />
       <AlertDialog message={detectionError} onClose={clearDetectionError} />
       <AlertDialog message={transcriptionError} onClose={clearTranscriptionError} />

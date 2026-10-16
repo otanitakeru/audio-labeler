@@ -2,8 +2,8 @@ import { createContext, useContext, useRef, useState, type ReactNode } from "rea
 import { detectSpeech } from "../api/vadApi";
 import { useAudioSession } from "./useAudioSession";
 import { useSegments } from "./useSegments";
-import { useVadSettings } from "./useVadSettings";
-import type { Segment } from "../types";
+import { findPresetOrFirst, useVadSettings } from "./useVadSettings";
+import type { Segment, VadParams } from "../types";
 
 type SpeechDetectionProgress = {
   // 前処理(モデルの読み込み・リサンプリング)中か、発話の判定中か。前処理の間は進み具合が分からない
@@ -18,8 +18,9 @@ type SpeechDetectionProgress = {
 type SpeechDetectionState = {
   // 実行中でなければnull。実行中は区間を変える操作(編集画面・ヘッダーのラベル/音声の読み込み)をすべて止める
   progress: SpeechDetectionProgress | null;
-  // 実行する。既にある区間をすべて消す設定(replaceAll)で区間があるときは、すぐには実行せず確認を求める
-  requestDetection: () => void;
+  // 指定したプリセットで実行し、次の初期値として覚える。既にある区間をすべて消す設定(replaceAll)で区間があるときは、
+  // すぐには実行せず確認を求める
+  requestDetection: (presetId: string) => void;
   isConfirmingReplaceAll: boolean;
   confirmReplaceAll: () => void;
   cancelReplaceAll: () => void;
@@ -39,14 +40,15 @@ const SpeechDetectionContext = createContext<SpeechDetectionState | null>(null);
 export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
   const { uploadId, channel } = useAudioSession();
   const { segments, applyDetectedSegments } = useSegments();
-  const { vadSettings } = useVadSettings();
+  const { vadSettings, setLastUsedPresetId } = useVadSettings();
   const [progress, setProgress] = useState<SpeechDetectionProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isConfirmingReplaceAll, setIsConfirmingReplaceAll] = useState(false);
+  // 置き換えの確認中に、確認が済んだら使うパラメータ。確認中でなければnull
+  const [paramsPendingReplaceAll, setParamsPendingReplaceAll] = useState<VadParams | null>(null);
   const [isConfirmingStop, setIsConfirmingStop] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const runDetection = async () => {
+  const runDetection = async (params: VadParams) => {
     if (!uploadId) return;
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -56,7 +58,7 @@ export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
       const ranges = await detectSpeech(
         uploadId,
         channel,
-        vadSettings,
+        params,
         (percent, newSpeechRanges) =>
           setProgress((prev) => ({
             phase: "detecting",
@@ -69,7 +71,7 @@ export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
         abortController.signal,
       );
       if (ranges.length === 0) {
-        setError("発話区間が見つかりませんでした。設定の「しきい値」を下げると検出されやすくなります。");
+        setError("発話区間が見つかりませんでした。プリセットの「しきい値」を下げると検出されやすくなります。");
         return;
       }
       const result = applyDetectedSegments(ranges, vadSettings.existingSegmentsMode);
@@ -86,12 +88,14 @@ export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const requestDetection = () => {
+  const requestDetection = (presetId: string) => {
+    const preset = findPresetOrFirst(vadSettings.presets, presetId);
+    setLastUsedPresetId(preset.id);
     if (vadSettings.existingSegmentsMode === "replaceAll" && segments.length > 0) {
-      setIsConfirmingReplaceAll(true);
+      setParamsPendingReplaceAll(preset.params);
       return;
     }
-    runDetection();
+    runDetection(preset.params);
   };
 
   return (
@@ -99,12 +103,12 @@ export function SpeechDetectionProvider({ children }: { children: ReactNode }) {
       value={{
         progress,
         requestDetection,
-        isConfirmingReplaceAll,
+        isConfirmingReplaceAll: paramsPendingReplaceAll !== null,
         confirmReplaceAll: () => {
-          setIsConfirmingReplaceAll(false);
-          runDetection();
+          setParamsPendingReplaceAll(null);
+          if (paramsPendingReplaceAll) runDetection(paramsPendingReplaceAll);
         },
-        cancelReplaceAll: () => setIsConfirmingReplaceAll(false),
+        cancelReplaceAll: () => setParamsPendingReplaceAll(null),
         requestStop: () => setIsConfirmingStop(true),
         isConfirmingStop,
         confirmStop: () => {

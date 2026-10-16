@@ -12,6 +12,8 @@ export type AudioLoadOptions = {
   // 選ばなかったときはnull
   labelRanges: LabeledRange[] | null;
   afterLoadProcessing: AfterLoadProcessing;
+  // 自動検出に使うプリセット。自動検出をしないときは使わない
+  vadPresetId: string;
 };
 
 // 読み込んだ後に続けて行う処理の、次の段階
@@ -23,21 +25,23 @@ type AfterLoadTask = {
   uploadId: string;
   step: "speechDetection" | "waitingSpeechDetection" | "transcription";
   transcribeAfterDetection: boolean;
+  vadPresetId: string;
 };
 
 function planAfterLoadTask(uploadId: string, options: AudioLoadOptions): AfterLoadTask | null {
-  const { afterLoadProcessing, labelRanges } = options;
+  const { afterLoadProcessing, labelRanges, vadPresetId } = options;
   if (afterLoadProcessing === "none") return null;
   // ラベルファイルを選んだときは自動検出しない(読み込んだラベルを消したり、重ねたりしないため。PLAN.md 4章-1)
   if (labelRanges !== null) {
     return afterLoadProcessing === "transcription"
-      ? { uploadId, step: "transcription", transcribeAfterDetection: false }
+      ? { uploadId, step: "transcription", transcribeAfterDetection: false, vadPresetId }
       : null;
   }
   return {
     uploadId,
     step: "speechDetection",
     transcribeAfterDetection: afterLoadProcessing === "transcription",
+    vadPresetId,
   };
 }
 
@@ -99,7 +103,7 @@ export function AudioFileOpenerProvider({ children }: { children: ReactNode }) {
     if (!afterLoadTask || afterLoadTask.uploadId !== uploadId) return;
     if (afterLoadTask.step === "speechDetection") {
       // 読み込み直後で区間は空のため、「すべて置き換える」の確認は出ずにすぐ始まる
-      requestDetection();
+      requestDetection(afterLoadTask.vadPresetId);
       setAfterLoadTask({ ...afterLoadTask, step: "waitingSpeechDetection" });
       return;
     }

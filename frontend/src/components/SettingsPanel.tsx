@@ -51,7 +51,7 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
     setPlaybackScrollMode,
   } = useDisplaySettings();
   const { bindings, setBindings } = useShortcutBindings();
-  const { vadSettings, setVadSettings } = useVadSettings();
+  const { vadSettings, setVadSettings, lastUsedPreset } = useVadSettings();
   const { editingSettings, setEditingSettings } = useEditingSettings();
   const { transcriptionSettings, setTranscriptionSettings } = useTranscriptionSettings();
 
@@ -60,6 +60,8 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [draftPlaybackScrollMode, setDraftPlaybackScrollMode] = useState(playbackScrollMode);
   const [draftBindings, setDraftBindings] = useState(bindings);
   const [draftVadSettings, setDraftVadSettings] = useState(vadSettings);
+  // 開いたときは、いつも使っているものを直しやすいよう前回使ったプリセットを出す
+  const [editingVadPresetId, setEditingVadPresetId] = useState(lastUsedPreset.id);
   const [draftEditingSettings, setDraftEditingSettings] = useState(editingSettings);
   const [draftTranscriptionSettings, setDraftTranscriptionSettings] = useState(transcriptionSettings);
 
@@ -203,7 +205,14 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
           </div>
         )}
 
-        {category === "自動検出" && <VadSettingsSection settings={draftVadSettings} onChange={setDraftVadSettings} />}
+        {category === "自動検出" && (
+          <VadSettingsSection
+            settings={draftVadSettings}
+            onChange={setDraftVadSettings}
+            editingPresetId={editingVadPresetId}
+            onChangeEditingPresetId={setEditingVadPresetId}
+          />
+        )}
 
         {category === "文字起こし" && (
           <TranscriptionSettingsSection

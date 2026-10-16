@@ -1,4 +1,4 @@
-import type { Segment, VadSettings } from "../types";
+import type { Segment, VadParams } from "../types";
 import { API_BASE_URL } from "./audioApi";
 
 type DetectedSpeechSegmentResponse = {
@@ -25,7 +25,7 @@ const toDetectedRange = (d: DetectedSpeechSegmentResponse): DetectedRange => ({
 export async function detectSpeech(
   uploadId: string,
   channel: number,
-  settings: VadSettings,
+  params: VadParams,
   onProgress: (percent: number, newSpeechRanges: DetectedRange[]) => void,
   // 中止したときは接続を切る。バックエンドは検出を途中でやめる
   signal: AbortSignal,
@@ -37,16 +37,16 @@ export async function detectSpeech(
     body: JSON.stringify({
       channel,
       params: {
-        sampling_rate: settings.samplingRate,
-        threshold: settings.threshold,
-        neg_threshold: settings.negThreshold,
-        min_speech_duration_ms: settings.minSpeechDurationMs,
-        max_speech_duration_s: settings.maxSpeechDurationS,
-        min_silence_duration_ms: settings.minSilenceDurationMs,
-        speech_pad_ms: settings.speechPadMs,
-        min_silence_at_max_speech: settings.minSilenceAtMaxSpeechMs,
-        use_max_poss_sil_at_max_speech: settings.useMaxPossibleSilenceAtMaxSpeech,
-        min_silence_duration_ms_after_vad: settings.minSilenceAfterVadMs,
+        sampling_rate: params.samplingRate,
+        threshold: params.threshold,
+        neg_threshold: params.negThreshold,
+        min_speech_duration_ms: params.minSpeechDurationMs,
+        max_speech_duration_s: params.maxSpeechDurationS,
+        min_silence_duration_ms: params.minSilenceDurationMs,
+        speech_pad_ms: params.speechPadMs,
+        min_silence_at_max_speech: params.minSilenceAtMaxSpeechMs,
+        use_max_poss_sil_at_max_speech: params.useMaxPossibleSilenceAtMaxSpeech,
+        min_silence_duration_ms_after_vad: params.minSilenceAfterVadMs,
       },
     }),
   });

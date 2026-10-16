@@ -22,6 +22,14 @@ export type ViewOptions = {
   highlightUnlabeledSegments: boolean;
 };
 
+// 再生ボタンの横で変える、再生の速さと音量
+export type PlaybackSettings = {
+  // 1が等速。音の高さは変えない
+  playbackRate: number;
+  // 1が元の音量。1より大きいと増幅する
+  volume: number;
+};
+
 // 時間軸上で隣の区間を指す向き(前の区間との結合、次の区間の選択など)
 export type SegmentDirection = "previous" | "next";
 

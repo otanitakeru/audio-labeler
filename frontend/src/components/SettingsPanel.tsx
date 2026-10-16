@@ -177,7 +177,9 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
 
             <div className="flex flex-col gap-2">
               <div className="font-semibold text-gray-900">境界をずらす量</div>
-              <p className="m-0 text-sm text-gray-500">開始・終了をずらすショートカット1回あたりの移動量です。</p>
+              <p className="m-0 text-sm text-gray-500">
+                開始・終了をずらすショートカット1回あたりの移動量です。押し続けると段階的に速くなります。
+              </p>
               <div className="flex flex-wrap items-center gap-3">
                 <NumberInput
                   unit="ms"

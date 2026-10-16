@@ -23,6 +23,16 @@ const WHEEL_ZOOM_FACTOR = 1.1;
 const MIN_REGION_LENGTH_SEC = 0.01;
 // キーボードで区間を選択して表示位置を動かすとき、区間の手前に空けておく余白(表示幅に対する割合)
 const SCROLL_MARGIN_RATIO = 0.1;
+// キーで区間の開始/終了をずらすとき、押し続けた時間(ms)に応じて1回あたりの移動量にかける倍率(時間の昇順)。
+// 押した回数ではなく時間で決めるのは、OSのキーリピートの速さが環境によって違うため
+const NUDGE_ACCELERATION_STAGES = [
+  { afterMs: 0, multiplier: 1 },
+  { afterMs: 500, multiplier: 2 },
+  { afterMs: 1500, multiplier: 5 },
+  { afterMs: 3000, multiplier: 10 },
+];
+// 加速しても1回あたりの移動量はこれを超えない(設定値が大きいと行き過ぎるため)
+const MAX_ACCELERATED_NUDGE_STEP_MS = 100;
 
 const SELECTION_REGION_COLOR = "rgba(234, 88, 12, 0.15)";
 type SegmentColors = {
@@ -586,8 +596,9 @@ export function useWavesurfer(
   // 描画済みの区間ごとに、最新の区間データ(出どころによる配色・位置・ラベル)を反映する関数と、
   // キーボード操作から選択するための関数
   const segmentControlsRef = useRef(new Map<string, { update: (segment: Segment) => void; activate: () => void }>());
-  // キーを押し始めるたびに作り直し、押し続けている間のずらしを履歴上1つの操作にまとめるためのキー
-  const nudgeHistoryGroupKeyRef = useRef("");
+  // キーを押し始めるたびに作り直す。historyGroupKeyは押し続けている間のずらしを履歴上1つの操作にまとめるためのキー、
+  // startedAtMsは押し続けた時間に応じて移動量を増やすための押し始めの時刻
+  const nudgeHoldRef = useRef({ historyGroupKey: "", startedAtMs: 0 });
 
   const [isReady, setIsReady] = useState(false);
   const [isLoadFailed, setIsLoadFailed] = useState(false);
@@ -1166,14 +1177,18 @@ export function useWavesurfer(
   // 調整帯でのドラッグと同じ制約(音声の範囲内・最短の長さ)をかけ、重なりなどはonUpdateRangeの検証に任せる。
   // 選択中の区間がない・端に達して動かせないときもキーは素通ししない。初期値の⌘ + ←はMacのブラウザでは「戻る」のため、
   // 素通しすると編集画面から離れてしまう
-  // キーを押し続けてずらした分は、元に戻すときに1回で戻せるよう1つの操作にまとめる
+  // キーを押し続けてずらした分は、元に戻すときに1回で戻せるよう1つの操作にまとめる。
+  // 押し続けると移動量を設定値の整数倍に増やす(整数倍にするのは、位置が設定値の刻みからずれないようにするため)
   const nudgeSelectedSegment = (edge: "start" | "end", direction: "left" | "right", isRepeat: boolean) => {
-    if (!isRepeat) nudgeHistoryGroupKeyRef.current = crypto.randomUUID();
+    if (!isRepeat) nudgeHoldRef.current = { historyGroupKey: crypto.randomUUID(), startedAtMs: performance.now() };
     const wavesurfer = wavesurferRef.current;
     const activeId = activeSegmentRef.current?.id;
     const segment = activeId ? segmentsRef.current.find((s) => s.id === activeId) : undefined;
     if (!wavesurfer || !segment) return;
-    const stepSec = segmentNudgeStepMs / 1000;
+    const heldMs = performance.now() - nudgeHoldRef.current.startedAtMs;
+    const stageMultiplier = NUDGE_ACCELERATION_STAGES.findLast((stage) => heldMs >= stage.afterMs)?.multiplier ?? 1;
+    const maxMultiplier = Math.max(1, Math.floor(MAX_ACCELERATED_NUDGE_STEP_MS / segmentNudgeStepMs));
+    const stepSec = (segmentNudgeStepMs * Math.min(stageMultiplier, maxMultiplier)) / 1000;
     const delta = direction === "left" ? -stepSec : stepSec;
     let { startSec, endSec } = segment;
     if (edge === "start") {
@@ -1185,7 +1200,7 @@ export function useWavesurfer(
       );
     }
     if (startSec === segment.startSec && endSec === segment.endSec) return;
-    const error = onUpdateRangeRef.current(segment.id, startSec, endSec, nudgeHistoryGroupKeyRef.current);
+    const error = onUpdateRangeRef.current(segment.id, startSec, endSec, nudgeHoldRef.current.historyGroupKey);
     if (error) onErrorRef.current(error);
   };
 

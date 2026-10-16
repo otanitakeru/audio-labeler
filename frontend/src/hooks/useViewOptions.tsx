@@ -9,6 +9,7 @@ const STORAGE_KEY = "audio-labeler.viewOptions";
 export const DEFAULT_VIEW_OPTIONS: ViewOptions = {
   highlightUnlabeledSegments: false,
   showSpectrogram: false,
+  showGridLines: false,
 };
 
 function loadViewOptions(): ViewOptions {

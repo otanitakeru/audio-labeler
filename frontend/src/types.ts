@@ -25,6 +25,8 @@ export type ViewOptions = {
   highlightUnlabeledSegments: boolean;
   // メイン波形とラベル帯の間にスペクトログラムを出す(発話区間の境界や子音・無声区間を見分けるため)
   showSpectrogram: boolean;
+  // 波形・スペクトログラムに、時間の目盛りの位置で縦の補助線を引く(区間の境界の時刻を目盛りと見比べるため)
+  showGridLines: boolean;
 };
 
 // 再生ボタンの横で変える、再生の速さと音量

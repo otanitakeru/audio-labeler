@@ -15,6 +15,7 @@ import SegmentExportDialog from "./SegmentExportDialog";
 // 「表示」メニューに並べる項目(上から順)
 const VIEW_OPTION_ITEMS: { key: keyof ViewOptions; label: string }[] = [
   { key: "showSpectrogram", label: "スペクトログラム" },
+  { key: "showGridLines", label: "補助線" },
   { key: "highlightUnlabeledSegments", label: "未入力の区間を色分け" },
 ];
 

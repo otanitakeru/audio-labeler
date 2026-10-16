@@ -113,7 +113,7 @@ Mac の表記です。Windows 等では <kbd>⌘</kbd> を <kbd>Ctrl</kbd>、<kb
 | 元に戻す                 | <kbd>⌘</kbd> + <kbd>Z</kbd>                                                               |
 | やり直す                 | <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd>(Windows は <kbd>Ctrl</kbd> + <kbd>Y</kbd>) |
 
-開始・終了をずらす量は、設定ダイアログの「編集」で変えられます(既定 10ms)。
+開始・終了をずらす量は、設定ダイアログの「編集」で変えられます(既定 10ms)。キーを押し続けると、1回あたりの移動量が段階的に増えます(最大 100ms)。
 
 ## ファイル形式
 

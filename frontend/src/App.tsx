@@ -21,7 +21,7 @@ import EditScreen from "./pages/EditScreen";
 import HomeScreen from "./pages/HomeScreen";
 
 function AppLayout() {
-  const { uploadId } = useAudioSession();
+  const { uploadId, uploadProgress, cancelUpload } = useAudioSession();
   const { isConfirmingDiscard, confirmDiscard, cancelDiscard, pendingAudioInfo, confirmLoad, cancelLoad } =
     useAudioFileOpener();
   const navigate = useNavigate();
@@ -58,7 +58,13 @@ function AppLayout() {
         onConfirm={confirmDiscard}
         onCancel={cancelDiscard}
       />
-      <AudioLoadDialog info={pendingAudioInfo} onLoad={confirmLoad} onCancel={cancelLoad} />
+      <AudioLoadDialog
+        uploadProgress={uploadProgress}
+        info={pendingAudioInfo}
+        onLoad={confirmLoad}
+        onCancel={cancelLoad}
+        onCancelUpload={cancelUpload}
+      />
     </div>
   );
 }

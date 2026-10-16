@@ -1,6 +1,12 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { AudioUploadRequestError, deleteUploadedAudio, uploadAudioFile } from "../api/audioApi";
 import type { AudioFileInfo } from "../types";
+
+// アップロード中のファイルと、送り終えた割合(0〜1。1になった後はバックエンドの保存・確認を待っている)
+export type AudioUploadProgress = {
+  filename: string;
+  sentRatio: number;
+};
 
 type AudioSessionState = {
   // 読み込んだ音声ファイルの情報(元ファイルのサンプリングレート・ビット深度など)。未読み込みならnull
@@ -10,11 +16,15 @@ type AudioSessionState = {
   // 波形に表示しているチャンネル。読み込みのダイアログで選び、読み込んだ後は変えない(PLAN.md 4章-1)
   channel: number;
   isUploading: boolean;
+  // アップロード中の進み具合。アップロードしていなければnull
+  uploadProgress: AudioUploadProgress | null;
   error: string | null;
   clearError: () => void;
-  // バックエンドへアップロードし、ファイルの情報を返す(失敗したらnull)。読み込みのダイアログでチャンネル数などを見てから
+  // バックエンドへアップロードし、ファイルの情報を返す(失敗・中止したらnull)。読み込みのダイアログでチャンネル数などを見てから
   // 読み込むかを決めるため、ここでは表示中の音声を切り替えない
   uploadFile: (file: File) => Promise<AudioFileInfo | null>;
+  // アップロードを中止する。中止はエラーとして知らせない
+  cancelUpload: () => void;
   // アップロード済みの音声を、指定したチャンネルで表示中の音声にする。それまで表示していた音声はバックエンドから消す
   loadAudio: (info: AudioFileInfo, channel: number) => void;
   // アップロードしたが読み込まなかった(読み込みのダイアログでキャンセルした)音声を、バックエンドから消す
@@ -32,15 +42,24 @@ const AudioSessionContext = createContext<AudioSessionState | null>(null);
 export function AudioSessionProvider({ children }: { children: ReactNode }) {
   const [audioInfo, setAudioInfo] = useState<AudioFileInfo | null>(null);
   const [channel, setChannel] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<AudioUploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const uploadAbortControllerRef = useRef<AbortController | null>(null);
 
   const uploadFile = async (file: File): Promise<AudioFileInfo | null> => {
-    setIsUploading(true);
+    const abortController = new AbortController();
+    uploadAbortControllerRef.current = abortController;
+    setUploadProgress({ filename: file.name, sentRatio: 0 });
     setError(null);
     try {
-      return await uploadAudioFile(file);
+      return await uploadAudioFile(
+        file,
+        (sentRatio) => setUploadProgress({ filename: file.name, sentRatio }),
+        abortController.signal,
+      );
     } catch (e) {
+      // 中止は利用者の操作なので、エラーとしては知らせない。送り終えた後に中止して、バックエンドに残った分は再起動で消える
+      if (abortController.signal.aborted) return null;
       // ファイルに原因があるときはバックエンドが400で理由を返すため、それ以外はサーバー側(停止中など)の問題として知らせる
       setError(
         e instanceof AudioUploadRequestError
@@ -49,7 +68,8 @@ export function AudioSessionProvider({ children }: { children: ReactNode }) {
       );
       return null;
     } finally {
-      setIsUploading(false);
+      uploadAbortControllerRef.current = null;
+      setUploadProgress(null);
     }
   };
 
@@ -68,10 +88,12 @@ export function AudioSessionProvider({ children }: { children: ReactNode }) {
         uploadId: audioInfo?.uploadId ?? null,
         filename: audioInfo?.filename ?? null,
         channel,
-        isUploading,
+        isUploading: uploadProgress !== null,
+        uploadProgress,
         error,
         clearError: () => setError(null),
         uploadFile,
+        cancelUpload: () => uploadAbortControllerRef.current?.abort(),
         loadAudio,
         discardUpload: (info) => deleteUnusedUpload(info.uploadId),
       }}

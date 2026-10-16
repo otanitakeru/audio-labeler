@@ -4,9 +4,11 @@ import Button from "./Button";
 import ChannelInput from "./ChannelInput";
 import Dialog from "./Dialog";
 import { Radio } from "./SettingFields";
+import VadPresetSelect from "./VadPresetSelect";
 import type { AudioLoadOptions } from "../hooks/useAudioFileOpener";
 import { readLabelFile } from "../hooks/useLabelFile";
 import { useLastAudioLoadChoices } from "../hooks/useLastAudioLoadChoices";
+import { useVadSettings } from "../hooks/useVadSettings";
 import type { LabeledRange } from "../formats/labelFormat";
 import type { AfterLoadProcessing, AudioFileInfo } from "../types";
 
@@ -37,10 +39,15 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
   const [channel, setChannel] = useState(lastChoices.channel < info.channelCount ? lastChoices.channel : 0);
   const [labelFile, setLabelFile] = useState<LabelFileSelection | null>(null);
   const [processing, setProcessing] = useState(lastChoices.afterLoadProcessing);
+  // 前回使ったプリセットは編集画面の「自動検出」ボタンと共通なので、読み込みの選択(lastChoices)とは別に持つ
+  const { vadSettings, lastUsedPreset } = useVadSettings();
+  const [vadPresetId, setVadPresetId] = useState(lastUsedPreset.id);
 
   const hasLabels = labelFile !== null;
   // ラベルファイルを外したときに元の選択へ戻せるよう、選択そのものは書き換えずに表示と読み込みだけ読み替える
   const effectiveProcessing = hasLabels && processing === "speechDetection" ? "none" : processing;
+  // ラベルファイルを選んだときの文字起こしは、自動検出を挟まない
+  const runsSpeechDetection = !hasLabels && effectiveProcessing !== "none";
   const channelOutOfRange = channel >= info.channelCount;
   const canLoad = !channelOutOfRange && labelFile?.error == null;
 
@@ -65,7 +72,12 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
           channel: info.channelCount > 1 ? channel : lastChoices.channel,
           afterLoadProcessing: processing,
         });
-        onLoad({ channel, labelRanges: labelFile?.ranges ?? null, afterLoadProcessing: effectiveProcessing });
+        onLoad({
+          channel,
+          labelRanges: labelFile?.ranges ?? null,
+          afterLoadProcessing: effectiveProcessing,
+          vadPresetId,
+        });
       }}
     >
       <div className="flex flex-wrap items-center gap-3 text-gray-900">
@@ -130,6 +142,13 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
           />
         ))}
       </div>
+
+      {runsSpeechDetection && (
+        <div className="flex flex-col gap-2">
+          <div className="font-semibold text-gray-900">自動検出のプリセット</div>
+          <VadPresetSelect presets={vadSettings.presets} value={vadPresetId} onChange={setVadPresetId} />
+        </div>
+      )}
 
       <div className="flex justify-end gap-3">
         <Button variant="secondary" onClick={onCancel}>

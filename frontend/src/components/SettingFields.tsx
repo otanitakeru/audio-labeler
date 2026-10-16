@@ -6,13 +6,14 @@ export function SettingItem({
   children,
 }: {
   title: string;
-  description: string;
+  // 見出しだけで分かる項目では省く
+  description?: string;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="font-semibold text-gray-900">{title}</div>
-      <p className="m-0 text-sm text-gray-500">{description}</p>
+      {description && <p className="m-0 text-sm text-gray-500">{description}</p>}
       {children}
     </div>
   );

@@ -30,9 +30,8 @@ export type SegmentDirection = "previous" | "next";
 // - keepExisting: 既にある区間は残し、検出結果のうち重ならない区間だけを足す
 export type ExistingSegmentsMode = "replaceAll" | "keepExisting";
 
-export type VadSettings = {
-  existingSegmentsMode: ExistingSegmentsMode;
-  // 以下はSilero VADの検出パラメータ(バックエンドのVadParams、silero_vad.get_speech_timestampsの引数と対応)
+// 自動検出(VAD)の検出パラメータ。バックエンドのVadParams(silero_vad.get_speech_timestampsの引数)と対応する
+export type VadParams = {
   samplingRate: 8000 | 16000;
   threshold: number;
   // nullのときはsilero_vadの既定(threshold - 0.15)
@@ -47,6 +46,20 @@ export type VadSettings = {
   // Silero VADの引数ではなく、このアプリ独自の後処理(バックエンドのmin_silence_duration_ms_after_vad)。
   // 前後の余白を足したあとの区間同士の間がこれより短ければつなげる。0なら結合しない
   minSilenceAfterVadMs: number;
+};
+
+// 検出パラメータの組に名前を付けたもの。実行するときに名前で選ぶ
+export type VadPreset = {
+  id: string;
+  name: string;
+  params: VadParams;
+};
+
+export type VadSettings = {
+  // 検出の厳しさとは関係がないため、プリセットには含めずすべてのプリセットで共通にする
+  existingSegmentsMode: ExistingSegmentsMode;
+  // 最低1つはある
+  presets: VadPreset[];
 };
 
 // 文字起こしの対象にする区間

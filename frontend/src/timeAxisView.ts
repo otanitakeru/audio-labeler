@@ -1,7 +1,8 @@
 import type WaveSurfer from "wavesurfer.js";
 import type { SpectrogramColorMap } from "./types";
 
-// 全体波形とメイン波形の間に置く、時間の目盛りの帯の高さ(px)
+// メイン波形とスペクトログラムの間に置く、時間の目盛りの帯の高さ(px。上下の区切り線を含む)。
+// スペクトログラム・区間の塗り・ラベル領域は、この分だけ下にずらして置く
 export const TIME_AXIS_HEIGHT_PX = 20;
 // 波形の上の補助線の色。波形の濃淡を読み取る邪魔にならないよう半透明の灰色にする
 const GRID_LINE_COLOR = "rgba(156, 163, 175, 0.45)";
@@ -40,33 +41,42 @@ function formatTick(sec: number, step: number): string {
 export type TimeAxisView = {
   // 時間の目盛りの位置に縦の補助線を引くか
   setGridVisible: (visible: boolean) => void;
-  // 縦の補助線を引く範囲(メイン波形+スペクトログラム)と、スペクトログラムの上の線の色を決める色の表
+  // スペクトログラムの部分だけ線の色を変えるための、その位置と色の表
   setGridLayout: (mainWaveformHeight: number, spectrogramHeight: number, colorMap: SpectrogramColorMap) => void;
   destroy: () => void;
 };
 
 // 時間の目盛りと縦の補助線を、wavesurferの表示に合わせて描く。拡大率に合わせて間隔を変え、見えている範囲の分だけ置く
 // (25分の音声を1秒5000pxまで拡大すると、全体に置いた場合は数十万本になるため)。
-// 目盛りの帯は全体波形の直後(スクロールしない位置)に置き、スクロールに合わせて描き直す。
-// 補助線は波形と一緒にスクロールするよう、波形全体の幅を持つwrapperの中に置く
+// 目盛りの帯はメイン波形の直下に置く(全体波形の直下に置くと、全体波形の時刻と見間違えるため)。
+// 目盛りの帯も補助線も、波形と一緒にスクロールするよう、波形全体の幅を持つwrapperの中に置く。
+// 補助線はラベル領域の下端まで引く(ラベルの区切りの時刻も目盛りと見比べられるようにするため)
 export function createTimeAxisView(wavesurfer: WaveSurfer): TimeAxisView {
   const ruler = document.createElement("div");
   ruler.style.cssText = [
     "position:relative",
+    // 補助線(z-index:2)より手前に置き、目盛りの文字に線が重ならないよう背景を塗る
+    "z-index:3",
+    "background:#fff",
+    "box-sizing:border-box",
     `height:${TIME_AXIS_HEIGHT_PX}px`,
+    // 波形・スペクトログラムとの区切り。ラベル領域との境界線(Waveform.tsx)と同じ程度の薄い灰色
+    "border-top:1px solid #d1d5db",
+    "border-bottom:1px solid #d1d5db",
     "overflow:hidden",
     "font-size:12px",
-    `line-height:${TIME_AXIS_HEIGHT_PX}px`,
+    `line-height:${TIME_AXIS_HEIGHT_PX - 2}px`,
     "font-variant-numeric:tabular-nums",
     "color:#9ca3af",
     "pointer-events:none",
   ].join(";");
-  // wrapperの親(スクロールする要素)の直前に入れる。全体波形も同じ位置に先に入っているため、その直後になる
-  wavesurfer.getWrapper().parentElement?.insertAdjacentElement("beforebegin", ruler);
+  // 波形を描く要素の直後に入れる。スペクトログラムは後からwrapperの末尾に足すため、その上になる
+  wavesurfer.getWrapper().querySelector(".canvases")?.insertAdjacentElement("afterend", ruler);
 
   const grid = document.createElement("div");
-  // 波形(再生済みの部分を描く要素はz-index:2)・スペクトログラムより手前、再生カーソル(z-index:5)より奥に置く
-  grid.style.cssText = "position:absolute;top:0;left:0;right:0;z-index:2;pointer-events:none";
+  // 波形(再生済みの部分を描く要素はz-index:2)・スペクトログラムより手前、区間(z-index:5)・再生カーソルより奥に置く。
+  // ラベル帯の文字の上には線を重ねず、読みやすさを保つ。wrapperの下の余白(ラベル領域)まで覆う
+  grid.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;z-index:2;pointer-events:none";
   wavesurfer.getWrapper().appendChild(grid);
   let isGridVisible = false;
   // 縦の補助線1本の背景。波形の部分とスペクトログラムの部分で色を変えるため、境目で切り替わるグラデーションにする
@@ -94,7 +104,7 @@ export function createTimeAxisView(wavesurfer: WaveSurfer): TimeAxisView {
       const x = sec * pxPerSec;
       const label = document.createElement("span");
       // 目盛りの位置に短い線を引き、文字はその右に置く
-      label.style.cssText = `position:absolute;left:${x - scroll}px;bottom:0;height:100%;padding-left:3px;border-left:1px solid #d1d5db;white-space:nowrap`;
+      label.style.cssText = `position:absolute;left:${x}px;top:0;height:100%;padding-left:3px;border-left:1px solid #d1d5db;white-space:nowrap`;
       label.textContent = formatTick(sec, step);
       labels.push(label);
       if (isGridVisible) {
@@ -109,7 +119,7 @@ export function createTimeAxisView(wavesurfer: WaveSurfer): TimeAxisView {
 
   // 拡大率・表示の幅が変わったときは、波形を描き直し終えて全体の幅が決まってから描き直す
   const unsubscribeRedraw = wavesurfer.on("redrawcomplete", render);
-  // 目盛りの帯は波形と一緒にスクロールしないため、遅れて見えないようスクロールのたびにすぐ描き直す(置くのは数十個)
+  // 見えている範囲の分だけ置いているため、スクロールのたびに置き直す(置くのは数十個)
   const unsubscribeScroll = wavesurfer.on("scroll", render);
   render();
 
@@ -119,11 +129,12 @@ export function createTimeAxisView(wavesurfer: WaveSurfer): TimeAxisView {
       render();
     },
     setGridLayout: (mainWaveformHeight, spectrogramHeight, colorMap) => {
-      grid.style.height = `${mainWaveformHeight + spectrogramHeight}px`;
       const spectrogramColor = SPECTROGRAM_GRID_LINE_COLORS[colorMap];
+      const spectrogramTop = mainWaveformHeight + TIME_AXIS_HEIGHT_PX;
+      const spectrogramBottom = spectrogramTop + spectrogramHeight;
       lineBackground =
         spectrogramHeight > 0
-          ? `linear-gradient(${GRID_LINE_COLOR} ${mainWaveformHeight}px, ${spectrogramColor} ${mainWaveformHeight}px)`
+          ? `linear-gradient(${GRID_LINE_COLOR} ${spectrogramTop}px, ${spectrogramColor} ${spectrogramTop}px ${spectrogramBottom}px, ${GRID_LINE_COLOR} ${spectrogramBottom}px)`
           : GRID_LINE_COLOR;
       render();
     },

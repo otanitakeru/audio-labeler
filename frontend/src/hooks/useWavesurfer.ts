@@ -8,7 +8,7 @@ import type { SpectrogramData } from "../spectrogram/computeSpectrogram";
 import { getMaxDisplayFrequency } from "../spectrogram/frequencyScale";
 import { requestSpectrogram } from "../spectrogram/requestSpectrogram";
 import { createSpectrogramView } from "../spectrogram/spectrogramView";
-import { createTimeAxisView, type TimeAxisView } from "../timeAxisView";
+import { createTimeAxisView, TIME_AXIS_HEIGHT_PX, type TimeAxisView } from "../timeAxisView";
 import type { PlaybackScrollMode, Segment, SegmentDirection, SpectrogramColorMap } from "../types";
 
 // メイン波形を拡大表示する際の1秒あたりの初期ピクセル数(全体はMinimapで確認する)
@@ -152,7 +152,8 @@ type RegionFill = {
 
 // 区間の塗り。波形とラベル領域には区間の状態に応じた色(未入力の赤・実行中の灰色や緑)を塗り、スペクトログラムの部分は
 // アクティブな区間だけを、状態によらず色の表に合わせた色で塗る(色の濃淡を読み取る邪魔にならないようにするため。
-// PLAN.md 5章)。区間(Region)の要素の背景色では高さ方向に塗り分けられないため、要素の背景は透明にして帯を重ねる
+// PLAN.md 5章)。区間(Region)の要素の背景色では高さ方向に塗り分けられないため、要素の背景は透明にして帯を重ねる。
+// メイン波形とスペクトログラムの間の時間の目盛りの帯は、目盛りを読めるよう塗らない
 function createRegionFill(
   element: HTMLElement,
   mainWaveformHeight: number,
@@ -171,12 +172,13 @@ function createRegionFill(
   const labelAreaBand = createBand();
   waveformBand.style.top = "0";
   waveformBand.style.height = `${mainWaveformHeight}px`;
-  spectrogramBand.style.top = `${mainWaveformHeight}px`;
+  const spectrogramTop = mainWaveformHeight + TIME_AXIS_HEIGHT_PX;
+  spectrogramBand.style.top = `${spectrogramTop}px`;
   labelAreaBand.style.bottom = "0";
   let spectrogramActiveColor = SPECTROGRAM_ACTIVE_SEGMENT_COLORS[spectrogramColorMap];
   const setSpectrogram = (height: number, colorMap: SpectrogramColorMap) => {
     spectrogramBand.style.height = `${height}px`;
-    labelAreaBand.style.top = `${mainWaveformHeight + height}px`;
+    labelAreaBand.style.top = `${spectrogramTop + height}px`;
     spectrogramActiveColor = SPECTROGRAM_ACTIVE_SEGMENT_COLORS[colorMap];
   };
   setSpectrogram(spectrogramHeight, spectrogramColorMap);
@@ -892,7 +894,7 @@ export function useWavesurfer(
     };
   }, [isReady, spectrogramHeight, spectrogramColorMap, spectrogramWindowMs]);
 
-  // 縦の補助線は、メイン波形とスペクトログラムにまたがって引く(ラベル領域には引かない)
+  // 縦の補助線は、メイン波形からラベル領域の下端まで引く。スペクトログラムの部分だけ色を変える
   useEffect(() => {
     const view = timeAxisViewRef.current;
     if (!view || !isReady) return;

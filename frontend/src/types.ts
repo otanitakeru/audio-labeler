@@ -138,3 +138,14 @@ export type EditingSettings = {
 // - page: カーソルが表示範囲の端に来たら、次の範囲へ切り替える
 // - none: 表示位置を動かさない(カーソルは表示範囲の外へ出ていく)
 export type PlaybackScrollMode = "center" | "page" | "none";
+
+// 設定ダイアログの「表示設定」で変える、一度決めたらあまり変えない表示の好み
+export type DisplaySettings = {
+  mainWaveformHeight: number;
+  minimapHeight: number;
+  // スペクトログラムを出すとき(ヘッダーの「表示」メニューでオンにしたとき)の縦幅
+  spectrogramHeight: number;
+  spectrogramColorMap: SpectrogramColorMap;
+  spectrogramWindowMs: number;
+  playbackScrollMode: PlaybackScrollMode;
+};

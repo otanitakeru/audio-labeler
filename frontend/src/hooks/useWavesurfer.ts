@@ -4,14 +4,19 @@ import Minimap from "wavesurfer.js/plugins/minimap";
 import RegionsPlugin, { type Region } from "wavesurfer.js/plugins/regions";
 import { findAdjacentSegment } from "./useSegments";
 import { sanitizeLabel } from "../formats/labelFormat";
-import type { PlaybackScrollMode, Segment, SegmentDirection } from "../types";
+import type { SpectrogramData } from "../spectrogram/computeSpectrogram";
+import { getMaxDisplayFrequency } from "../spectrogram/frequencyScale";
+import { requestSpectrogram } from "../spectrogram/requestSpectrogram";
+import { createSpectrogramView } from "../spectrogram/spectrogramView";
+import type { PlaybackScrollMode, Segment, SegmentDirection, SpectrogramColorMap } from "../types";
 
 // メイン波形を拡大表示する際の1秒あたりの初期ピクセル数(全体はMinimapで確認する)
 const DEFAULT_ZOOM = 100;
 // Cmd/Ctrl+スクロールでの拡大率(1秒あたりのピクセル数)の可動域。UIにスライダーは出さず、
 // ホイール操作でのみ変更する(スライダーだとホイールとの二重の入力経路になるため設けない)
 const MIN_ZOOM = 20;
-const MAX_ZOOM = 1000;
+// 上限は、25分の音声で波形全体の幅がブラウザの扱える大きさ(Firefoxで約1800万px)に収まるようにする(PLAN.md 5章)
+const MAX_ZOOM = 5000;
 // 縦方向の拡大率(wavesurferのbarHeight)。1が基準(振幅ピークが枠いっぱい)で、
 // 大きいほど小さな振幅が見やすくなる代わりに大きな振幅は枠からはみ出す
 const DEFAULT_VERTICAL_ZOOM = 0.9;
@@ -126,6 +131,49 @@ function getSegmentColors(
   if (!editingLocked) return highlightUnlabeled && segment.label === "" ? UNLABELED_SEGMENT_COLORS : SEGMENT_COLORS;
   if (segment.id === highlightedSegmentId) return HIGHLIGHTED_SEGMENT_COLORS;
   return processedSegmentIds.has(segment.id) ? PROCESSED_SEGMENT_COLORS : LOCKED_SEGMENT_COLORS;
+}
+
+type RegionFill = {
+  setColors: (colors: SegmentColors, isActive: boolean) => void;
+  setSpectrogramHeight: (height: number) => void;
+  // 文字起こしで処理中の区間の塗りを動かす帯(スペクトログラムの部分は動かさない)
+  statusBands: HTMLElement[];
+};
+
+// 区間の塗り。波形とラベル領域には区間の状態に応じた色(未入力の赤・実行中の灰色や緑)を塗り、スペクトログラムの部分には
+// 普段の青だけを塗る(色の濃淡を読み取る邪魔にならないようにするため。PLAN.md 5章)。区間(Region)の要素の背景色では
+// 高さ方向に塗り分けられないため、要素の背景は透明にして帯を重ねる
+function createRegionFill(element: HTMLElement, mainWaveformHeight: number, spectrogramHeight: number): RegionFill {
+  const createBand = () => {
+    const band = document.createElement("div");
+    band.style.cssText = "position:absolute;left:0;right:0;pointer-events:none";
+    // ラベル帯・調整帯より奥に置く
+    element.prepend(band);
+    return band;
+  };
+  const waveformBand = createBand();
+  const spectrogramBand = createBand();
+  const labelAreaBand = createBand();
+  waveformBand.style.top = "0";
+  waveformBand.style.height = `${mainWaveformHeight}px`;
+  spectrogramBand.style.top = `${mainWaveformHeight}px`;
+  labelAreaBand.style.bottom = "0";
+  const setSpectrogramHeight = (height: number) => {
+    spectrogramBand.style.height = `${height}px`;
+    labelAreaBand.style.top = `${mainWaveformHeight + height}px`;
+  };
+  setSpectrogramHeight(spectrogramHeight);
+
+  return {
+    setColors: (colors, isActive) => {
+      const color = isActive ? colors.activeRegion : colors.region;
+      waveformBand.style.backgroundColor = color;
+      labelAreaBand.style.backgroundColor = color;
+      spectrogramBand.style.backgroundColor = isActive ? SEGMENT_COLORS.activeRegion : SEGMENT_COLORS.region;
+    },
+    setSpectrogramHeight,
+    statusBands: [waveformBand, labelAreaBand],
+  };
 }
 
 // ラベル文言を表示・編集する帯の高さ(px)。「波形の下側にラベルを書く」という見た目にするため、
@@ -468,6 +516,13 @@ type UseWavesurferOptions = {
   onError: (message: string) => void;
   mainWaveformHeight: number;
   minimapHeight: number;
+  // メイン波形とラベル帯の間に出すスペクトログラムの縦幅。0なら出さない
+  spectrogramHeight: number;
+  spectrogramColorMap: SpectrogramColorMap;
+  // スペクトログラムの分析の窓の長さ(ミリ秒)。変えると計算し直す
+  spectrogramWindowMs: number;
+  // 元の音声のサンプリング周波数。表示用にデコードするサンプリング周波数を決めるのに使う
+  sourceSampleRate: number | null;
   playbackScrollMode: PlaybackScrollMode;
   // 再生の速さ(1が等速)。音の高さは変えない
   playbackRate: number;
@@ -499,6 +554,10 @@ type UseWavesurferResult = {
   // 縦軸の目盛りに表示すべき絶対振幅値(0〜1)。normalize:trueとverticalZoomの効果を反映した、
   // 現在枠いっぱいに描画されている振幅の絶対値
   visiblePeakAmplitude: number;
+  // スペクトログラムの上端の周波数(Hz)。20kHzか、サンプリング周波数の半分の低い方
+  spectrogramMaxFrequency: number;
+  // スペクトログラムを計算している間(表示したのに、まだ描けていない間)
+  isSpectrogramComputing: boolean;
   togglePlay: () => void;
   // 選択中の区間がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   deleteSelectedSegment: () => boolean;
@@ -529,6 +588,10 @@ export function useWavesurfer(
     onError,
     mainWaveformHeight,
     minimapHeight,
+    spectrogramHeight,
+    spectrogramColorMap,
+    spectrogramWindowMs,
+    sourceSampleRate,
     playbackScrollMode,
     playbackRate,
     volume,
@@ -579,6 +642,12 @@ export function useWavesurfer(
   processedSegmentIdsRef.current = processedSegmentIds;
   const highlightUnlabeledSegmentsRef = useRef(highlightUnlabeledSegments);
   highlightUnlabeledSegmentsRef.current = highlightUnlabeledSegments;
+  // 区間の塗りを波形・スペクトログラム・ラベル領域に塗り分ける位置。波形の縦幅が変わると区間ごと作り直されるため、
+  // 作るときに参照するだけでよい
+  const mainWaveformHeightRef = useRef(mainWaveformHeight);
+  mainWaveformHeightRef.current = mainWaveformHeight;
+  const spectrogramHeightRef = useRef(spectrogramHeight);
+  spectrogramHeightRef.current = spectrogramHeight;
   // 生成時に参照するだけで、変更は下のeffectでsetOptionsにより反映する(波形を作り直さないため)
   const playbackScrollModeRef = useRef(playbackScrollMode);
   playbackScrollModeRef.current = playbackScrollMode;
@@ -608,6 +677,10 @@ export function useWavesurfer(
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [verticalZoom, setVerticalZoom] = useState(DEFAULT_VERTICAL_ZOOM);
   const [peakAmplitude, setPeakAmplitude] = useState(0);
+  const [decodedSampleRate, setDecodedSampleRate] = useState(0);
+  const [isSpectrogramComputing, setIsSpectrogramComputing] = useState(false);
+  // 計算したスペクトログラムと、計算元のデコード済みの音声・窓の長さ(計算し直す必要があるか見分けるため)
+  const spectrogramCacheRef = useRef<{ source: AudioBuffer; windowMs: number; data: SpectrogramData } | null>(null);
   // ホイールズーム時にカーソル下の位置を固定するための基準点。zoom自体はstate経由で別effectから反映されるため、
   // ホイール時点のカーソル位置(画面上のX座標)と、波形全体に対するその位置の割合をここに控えて受け渡す
   const zoomAnchorRef = useRef<{ clientX: number; ratio: number } | null>(null);
@@ -622,8 +695,9 @@ export function useWavesurfer(
     setZoom(DEFAULT_ZOOM);
     setVerticalZoom(DEFAULT_VERTICAL_ZOOM);
     setPeakAmplitude(0);
+    setDecodedSampleRate(0);
 
-    if (!containerRef.current || !audioUrl) return;
+    if (!containerRef.current || !audioUrl || !sourceSampleRate) return;
 
     const regions = RegionsPlugin.create();
 
@@ -635,6 +709,9 @@ export function useWavesurfer(
       cursorColor: "#111827",
       height: mainWaveformHeight,
       url: audioUrl,
+      // wavesurferの既定(8kHz)のままだとスペクトログラムが4kHzまでしか見えないため、Audacityと同じく元のサンプリング周波数で
+      // デコードする(PLAN.md 5章)
+      sampleRate: sourceSampleRate,
       normalize: true,
       minPxPerSec: DEFAULT_ZOOM,
       ...getPlaybackScrollOptions(playbackScrollModeRef.current),
@@ -675,9 +752,9 @@ export function useWavesurfer(
     wavesurfer.getWrapper().style.paddingBottom = `${LABEL_AREA_HEIGHT_PX}px`;
 
     // wrapperは波形全体の幅を持ち、拡大・スクロールに合わせて動くため、時間の割合で置けば波形と位置が揃う。
-    // ラベル領域には被せず、波形の描画領域だけを覆う
+    // ラベル領域・スペクトログラムには被せず、波形の描画領域だけを覆う
     const detectionPreviewLayer = document.createElement("div");
-    detectionPreviewLayer.style.cssText = `position:absolute;top:0;left:0;right:0;bottom:${LABEL_AREA_HEIGHT_PX}px;z-index:2;pointer-events:none`;
+    detectionPreviewLayer.style.cssText = `position:absolute;top:0;left:0;right:0;height:${mainWaveformHeight}px;z-index:2;pointer-events:none`;
     wavesurfer.getWrapper().appendChild(detectionPreviewLayer);
     detectionPreviewLayerRef.current = detectionPreviewLayer;
 
@@ -715,13 +792,15 @@ export function useWavesurfer(
     });
 
     wavesurfer.on("ready", () => {
-      const peak = getPeakAmplitude(wavesurfer.getDecodedData());
+      const decodedData = wavesurfer.getDecodedData();
+      const peak = getPeakAmplitude(decodedData);
       // wavesurferは波形を画面幅ごとのキャンバスに分けて描き、normalizeもキャンバスごとの最大値で行うため、
       // そのままでは横方向のズームで振幅の見え方が変わり、キャンバスの境目で振幅が不連続になる。
       // 音声全体の最大値を基準として渡し、縦軸の目盛り(visiblePeakAmplitude)とも一致させる
       wavesurfer.setOptions({ maxPeak: peak });
       setDuration(wavesurfer.getDuration());
       setPeakAmplitude(peak);
+      setDecodedSampleRate(decodedData?.sampleRate ?? 0);
       setIsReady(true);
     });
     // 音声を切り替えたときの取得の中断は、destroy()でリスナーが外れた後に起きるためここには届かない
@@ -744,13 +823,45 @@ export function useWavesurfer(
       wavesurfer.destroy();
       void audioContext.close();
       wavesurferRef.current = null;
+      // 前の音声のスペクトログラムは使わないため、メモリを空ける
+      spectrogramCacheRef.current = null;
       regionsRef.current = null;
       gainNodeRef.current = null;
       selectionRegionRef.current = null;
       labelingRef.current = null;
       activeSegmentRef.current = null;
     };
-  }, [containerRef, audioUrl, mainWaveformHeight, minimapHeight]);
+  }, [containerRef, audioUrl, sourceSampleRate, mainWaveformHeight, minimapHeight]);
+
+  // スペクトログラムは波形を作り直さずに出し入れする(作り直すと音声の再取得・表示位置のリセットが起きるため)。
+  // 計算した結果は同じ音声・同じ窓の長さのあいだ持ち続け、表示を消して出し直しても計算し直さない(PLAN.md 5章)
+  useEffect(() => {
+    const wavesurfer = wavesurferRef.current;
+    const decodedData = wavesurfer?.getDecodedData();
+    if (!wavesurfer || !decodedData || !isReady || spectrogramHeight <= 0) return;
+    const view = createSpectrogramView(wavesurfer, spectrogramHeight, spectrogramColorMap);
+    const cached = spectrogramCacheRef.current;
+    if (cached?.source === decodedData && cached.windowMs === spectrogramWindowMs) {
+      view.setData(cached.data);
+      return () => view.destroy();
+    }
+    setIsSpectrogramComputing(true);
+    const cancel = requestSpectrogram(
+      decodedData.getChannelData(0),
+      decodedData.sampleRate,
+      spectrogramWindowMs / 1000,
+      (data) => {
+        spectrogramCacheRef.current = { source: decodedData, windowMs: spectrogramWindowMs, data };
+        setIsSpectrogramComputing(false);
+        view.setData(data);
+      },
+    );
+    return () => {
+      cancel();
+      setIsSpectrogramComputing(false);
+      view.destroy();
+    };
+  }, [isReady, spectrogramHeight, spectrogramColorMap, spectrogramWindowMs]);
 
   // 選択範囲を解除する(ラベル入力中なら入力も取り消される)。refだけを参照するため、一度だけ登録するハンドラからも呼べる
   const clearSelectionRegion = () => {
@@ -832,13 +943,16 @@ export function useWavesurfer(
         id,
         start: segment.startSec,
         end: segment.endSec,
-        color: colors.region,
+        // 塗りはcreateRegionFillの帯で行う
+        color: "transparent",
         content,
         drag: false,
         resize: false,
       });
       const element = region.element;
       if (!element) continue;
+      const fill = createRegionFill(element, mainWaveformHeightRef.current, spectrogramHeightRef.current);
+      fill.setColors(colors, false);
 
       // ドラッグ中は見た目(region)だけを動かし、離したときに一度だけ状態へ反映する。
       // 重なり等で反映できなければドラッグ開始時の位置に戻す
@@ -878,23 +992,21 @@ export function useWavesurfer(
 
       // 編集を止めている間は、調整帯を灰色にし、ラベル帯・調整帯にカーソルを当てても形を変えない(押しても何も起きないため)。
       // 未入力の区間を色分けしているときは、調整帯も区間と同じ赤系にする。
-      // 文字起こしで処理中の区間のときだけ塗りを動かし、処理中でなくなったら止めてsetOptionsで指定した色に戻す
-      let pulse: Animation | null = null;
+      // 文字起こしで処理中の区間のときだけ塗りを動かし、処理中でなくなったら止めてsetColorsで指定した色に戻す
+      let pulses: Animation[] = [];
       const syncAppearance = () => {
         const locked = editingLockedRef.current;
         adjustBar.setLocked(locked);
         adjustBar.setUnlabeled(colors === UNLABELED_SEGMENT_COLORS);
         if (!content.isContentEditable) content.style.cursor = locked ? "default" : "pointer";
         const isHighlighted = colors === HIGHLIGHTED_SEGMENT_COLORS;
-        if (isHighlighted && !pulse) {
-          pulse = pulseHighlightedBackground(
-            element,
-            HIGHLIGHTED_SEGMENT_COLORS.region,
-            PROCESSED_SEGMENT_COLORS.region,
+        if (isHighlighted && pulses.length === 0) {
+          pulses = fill.statusBands.map((band) =>
+            pulseHighlightedBackground(band, HIGHLIGHTED_SEGMENT_COLORS.region, PROCESSED_SEGMENT_COLORS.region),
           );
-        } else if (!isHighlighted && pulse) {
-          pulse.cancel();
-          pulse = null;
+        } else if (!isHighlighted && pulses.length > 0) {
+          pulses.forEach((pulse) => pulse.cancel());
+          pulses = [];
         }
       };
       syncAppearance();
@@ -904,20 +1016,21 @@ export function useWavesurfer(
         activeSegmentRef.current = null;
         content.blur();
         adjustBar.setActive(false);
-        region.setOptions({ color: colors.region });
+        fill.setColors(colors, false);
       };
       const activate = () => {
         activeSegmentRef.current?.deactivate();
         activeSegmentRef.current = { id, element, deactivate, startEditing };
         adjustBar.setActive(true);
-        region.setOptions({ color: colors.activeRegion });
+        fill.setColors(colors, true);
       };
       // 区間は作り直さないため、同じIDのまま中身が変わったとき(元に戻す/やり直す、文字起こしの進行)は
       // ここで見た目に反映する。移動・幅変更・ラベル編集の直後は見た目が既に最新なので、値が変わったときだけ触る
       const update = (latest: Segment) => {
         colors = getColors(latest);
         setLabelContentColors(content, colors.labelBackground, colors.labelBorder);
-        region.setOptions({ color: activeSegmentRef.current?.id === id ? colors.activeRegion : colors.region });
+        fill.setColors(colors, activeSegmentRef.current?.id === id);
+        fill.setSpectrogramHeight(spectrogramHeightRef.current);
         syncAppearance();
         if (region.start !== latest.startSec || region.end !== latest.endSec) {
           region.setOptions({ start: latest.startSec, end: latest.endSec });
@@ -967,9 +1080,17 @@ export function useWavesurfer(
         if (label !== getCurrentLabel()) onUpdateLabelRef.current(id, label);
       });
     }
-    // 文字起こしの開始・終了、処理中の区間の移り変わり、未入力の区間の色分けの切り替えでも配色を更新するため、
-    // 区間が変わらなくても走らせる
-  }, [segments, isReady, editingLocked, highlightedSegmentId, processedSegmentIds, highlightUnlabeledSegments]);
+    // 文字起こしの開始・終了、処理中の区間の移り変わり、未入力の区間の色分けの切り替え、スペクトログラムの出し入れでも
+    // 見た目を更新するため、区間が変わらなくても走らせる
+  }, [
+    segments,
+    isReady,
+    editingLocked,
+    highlightedSegmentId,
+    processedSegmentIds,
+    highlightUnlabeledSegments,
+    spectrogramHeight,
+  ]);
 
   // 全体波形の上に確定済み区間の範囲と、自動検出の途中経過を表示する。数が多くても描き直しは軽いため、変わるたびに全て作り直す
   useEffect(() => {
@@ -1268,6 +1389,8 @@ export function useWavesurfer(
     currentTime,
     duration,
     visiblePeakAmplitude: peakAmplitude / verticalZoom,
+    spectrogramMaxFrequency: getMaxDisplayFrequency(decodedSampleRate),
+    isSpectrogramComputing,
     togglePlay,
     deleteSelectedSegment,
     deselectSegment,

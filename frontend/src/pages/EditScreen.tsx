@@ -49,9 +49,17 @@ function EditScreen() {
     undo,
     redo,
   } = useSegments();
-  const { mainWaveformHeight, minimapHeight, playbackScrollMode } = useDisplaySettings();
+  const {
+    mainWaveformHeight,
+    minimapHeight,
+    spectrogramHeight: spectrogramHeightSetting,
+    spectrogramColorMap,
+    spectrogramWindowMs,
+    playbackScrollMode,
+  } = useDisplaySettings();
   const { editingSettings } = useEditingSettings();
   const { viewOptions } = useViewOptions();
+  const spectrogramHeight = viewOptions.showSpectrogram ? spectrogramHeightSetting : 0;
   const { playbackSettings, setPlaybackRate, setVolume } = usePlaybackSettings();
   const [error, setError] = useState<string | null>(null);
   const [isChoosingDetectionPreset, setIsChoosingDetectionPreset] = useState(false);
@@ -99,6 +107,8 @@ function EditScreen() {
     currentTime,
     duration,
     visiblePeakAmplitude,
+    spectrogramMaxFrequency,
+    isSpectrogramComputing,
     togglePlay,
     deleteSelectedSegment,
     deselectSegment,
@@ -124,6 +134,10 @@ function EditScreen() {
     onError: setError,
     mainWaveformHeight,
     minimapHeight,
+    spectrogramHeight,
+    spectrogramColorMap,
+    spectrogramWindowMs,
+    sourceSampleRate: audioInfo?.sampleRate ?? null,
     playbackScrollMode,
     playbackRate: playbackSettings.playbackRate,
     volume: playbackSettings.volume,
@@ -235,6 +249,9 @@ function EditScreen() {
           peakAmplitude={visiblePeakAmplitude}
           mainWaveformHeight={mainWaveformHeight}
           minimapHeight={minimapHeight}
+          spectrogramHeight={spectrogramHeight}
+          spectrogramMaxFrequency={spectrogramMaxFrequency}
+          isSpectrogramComputing={isSpectrogramComputing}
         />
         {!isReady && (
           <div

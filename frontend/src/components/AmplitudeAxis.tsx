@@ -3,7 +3,6 @@ type AmplitudeAxisProps = {
   // この値を上限に描画しているため、目盛りもこの値を基準にした絶対値として表示する
   peakAmplitude: number;
   mainWaveformHeight: number;
-  minimapHeight: number;
   // このメモリ上でのCmd/Ctrl+スクロールをverticalZoomに反映するため、useWavesurfer側に公開する
   ref: React.RefObject<HTMLDivElement | null>;
 };
@@ -23,7 +22,7 @@ function getDecimalsForStep(step: number): number {
   return Math.min(Math.max(-Math.floor(Math.log10(step)), 0), 6);
 }
 
-function AmplitudeAxis({ peakAmplitude, mainWaveformHeight, minimapHeight, ref }: AmplitudeAxisProps) {
+function AmplitudeAxis({ peakAmplitude, mainWaveformHeight, ref }: AmplitudeAxisProps) {
   const ticks: number[] = [0];
   let decimals = 2;
 
@@ -38,23 +37,20 @@ function AmplitudeAxis({ peakAmplitude, mainWaveformHeight, minimapHeight, ref }
   }
 
   return (
-    <div className="flex w-14 shrink-0 flex-col">
-      <div style={{ height: minimapHeight }} />
-      <div
-        ref={ref}
-        className="relative text-right text-xs tabular-nums text-gray-400"
-        style={{ height: mainWaveformHeight }}
-      >
-        {ticks.map((value) => {
-          const ratio = peakAmplitude > 0 ? value / peakAmplitude : 0;
-          const topPercent = 50 * (1 - ratio);
-          return (
-            <span key={value} className="absolute right-0 -translate-y-1/2" style={{ top: `${topPercent}%` }}>
-              {value.toFixed(decimals)}
-            </span>
-          );
-        })}
-      </div>
+    <div
+      ref={ref}
+      className="relative text-right text-xs tabular-nums text-gray-400"
+      style={{ height: mainWaveformHeight }}
+    >
+      {ticks.map((value) => {
+        const ratio = peakAmplitude > 0 ? value / peakAmplitude : 0;
+        const topPercent = 50 * (1 - ratio);
+        return (
+          <span key={value} className="absolute right-0 -translate-y-1/2" style={{ top: `${topPercent}%` }}>
+            {value.toFixed(decimals)}
+          </span>
+        );
+      })}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import type { SpectrogramData } from "../spectrogram/computeSpectrogram";
 import { getMaxDisplayFrequency } from "../spectrogram/frequencyScale";
 import { requestSpectrogram } from "../spectrogram/requestSpectrogram";
 import { createSpectrogramView } from "../spectrogram/spectrogramView";
+import { createTimeAxisView, type TimeAxisView } from "../timeAxisView";
 import type { PlaybackScrollMode, Segment, SegmentDirection, SpectrogramColorMap } from "../types";
 
 // メイン波形を拡大表示する際の1秒あたりの初期ピクセル数(全体はMinimapで確認する)
@@ -558,6 +559,8 @@ type UseWavesurferOptions = {
   detectionPreviewRanges: Pick<Segment, "startSec" | "endSec">[];
   // ラベルが空の区間を別の色にする(ヘッダーの「表示」メニューで切り替える)
   highlightUnlabeledSegments: boolean;
+  // 時間の目盛りの位置に縦の補助線を引く(ヘッダーの「表示」メニューで切り替える)
+  showGridLines: boolean;
 };
 
 type UseWavesurferResult = {
@@ -618,6 +621,7 @@ export function useWavesurfer(
     processedSegmentIds,
     detectionPreviewRanges,
     highlightUnlabeledSegments,
+    showGridLines,
   }: UseWavesurferOptions,
 ): UseWavesurferResult {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -634,6 +638,8 @@ export function useWavesurfer(
   const minimapSegmentLayerRef = useRef<HTMLDivElement | null>(null);
   // メイン波形の上に自動検出の途中経過を表示するレイヤー
   const detectionPreviewLayerRef = useRef<HTMLDivElement | null>(null);
+  // 全体波形とメイン波形の間の時間の目盛りと、縦の補助線
+  const timeAxisViewRef = useRef<TimeAxisView | null>(null);
   // イベントハンドラは初期化effect内で一度だけ登録するため、最新の値を参照できるようrefに控える
   const segmentsRef = useRef(segments);
   segmentsRef.current = segments;
@@ -786,6 +792,9 @@ export function useWavesurfer(
       minimapElement.appendChild(layer);
       minimapSegmentLayerRef.current = layer;
     }
+    // 補助線の表示・範囲・色は、下のeffectで反映する
+    const timeAxisView = createTimeAxisView(wavesurfer);
+    timeAxisViewRef.current = timeAxisView;
 
     // 位置・幅の変更は確定済み区間の調整帯でのみ行う方針のため、選択範囲も波形上でのドラッグ移動/リサイズは無効にする
     // (範囲を変えたいときはドラッグ選択をやり直す)
@@ -834,6 +843,8 @@ export function useWavesurfer(
 
     return () => {
       detachMinimapScroll();
+      timeAxisView.destroy();
+      timeAxisViewRef.current = null;
       minimapElementRef.current = null;
       minimapSegmentLayerRef.current = null;
       detectionPreviewLayerRef.current = null;
@@ -880,6 +891,14 @@ export function useWavesurfer(
       view.destroy();
     };
   }, [isReady, spectrogramHeight, spectrogramColorMap, spectrogramWindowMs]);
+
+  // 縦の補助線は、メイン波形とスペクトログラムにまたがって引く(ラベル領域には引かない)
+  useEffect(() => {
+    const view = timeAxisViewRef.current;
+    if (!view || !isReady) return;
+    view.setGridLayout(mainWaveformHeight, spectrogramHeight, spectrogramColorMap);
+    view.setGridVisible(showGridLines);
+  }, [isReady, showGridLines, mainWaveformHeight, spectrogramHeight, spectrogramColorMap]);
 
   // 選択範囲を解除する(ラベル入力中なら入力も取り消される)。refだけを参照するため、一度だけ登録するハンドラからも呼べる
   const clearSelectionRegion = () => {

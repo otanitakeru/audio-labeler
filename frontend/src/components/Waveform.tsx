@@ -1,5 +1,6 @@
 import AmplitudeAxis from "./AmplitudeAxis";
 import FrequencyAxis from "./FrequencyAxis";
+import { TIME_AXIS_HEIGHT_PX } from "../timeAxisView";
 
 type WaveformProps = {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -26,13 +27,16 @@ function Waveform({
   isSpectrogramComputing,
   isProcessing,
 }: WaveformProps) {
-  const labelAreaTop = minimapHeight + mainWaveformHeight + spectrogramHeight;
+  // 全体波形の下に、useWavesurfer側で時間の目盛りの帯を置いている
+  const mainWaveformTop = minimapHeight + TIME_AXIS_HEIGHT_PX;
+  const spectrogramTop = mainWaveformTop + mainWaveformHeight;
+  const labelAreaTop = spectrogramTop + spectrogramHeight;
   return (
     <div
       className={`flex min-h-25 gap-2 rounded-lg border border-gray-300 bg-white p-4 ${isProcessing ? "animate-border-pulse" : ""}`}
     >
       <div className="flex w-14 shrink-0 flex-col">
-        <div style={{ height: minimapHeight }} />
+        <div style={{ height: mainWaveformTop }} />
         <AmplitudeAxis ref={amplitudeAxisRef} peakAmplitude={peakAmplitude} mainWaveformHeight={mainWaveformHeight} />
         {spectrogramHeight > 0 && <FrequencyAxis maxFrequency={spectrogramMaxFrequency} height={spectrogramHeight} />}
       </div>
@@ -47,7 +51,7 @@ function Waveform({
         {isSpectrogramComputing && (
           <div
             className="pointer-events-none absolute inset-x-0 z-10 flex items-center justify-center gap-2 text-sm text-gray-500"
-            style={{ top: minimapHeight + mainWaveformHeight, height: spectrogramHeight }}
+            style={{ top: spectrogramTop, height: spectrogramHeight }}
           >
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
             スペクトログラムを計算中...

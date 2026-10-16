@@ -148,6 +148,7 @@ function EditScreen() {
     processedSegmentIds: transcriptionProgress?.processedSegmentIds ?? NO_SEGMENT_IDS,
     detectionPreviewRanges: detectionProgress?.speechRanges ?? NO_RANGES,
     highlightUnlabeledSegments: viewOptions.highlightUnlabeledSegments,
+    showGridLines: viewOptions.showGridLines,
   });
 
   useKeyboardShortcuts(

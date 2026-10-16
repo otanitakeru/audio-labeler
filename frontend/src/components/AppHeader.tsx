@@ -6,10 +6,17 @@ import { useLabelFile } from "../hooks/useLabelFile";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useTranscription } from "../hooks/useTranscription";
 import { useViewOptions } from "../hooks/useViewOptions";
+import type { ViewOptions } from "../types";
 import AlertDialog from "./AlertDialog";
 import ConfirmDialog from "./ConfirmDialog";
 import HeaderMenu from "./HeaderMenu";
 import SegmentExportDialog from "./SegmentExportDialog";
+
+// 「表示」メニューに並べる項目(上から順)
+const VIEW_OPTION_ITEMS: { key: keyof ViewOptions; label: string }[] = [
+  { key: "showSpectrogram", label: "スペクトログラム" },
+  { key: "highlightUnlabeledSegments", label: "未入力の区間を色分け" },
+];
 
 type AppHeaderProps = {
   onOpenSettings: () => void;
@@ -116,21 +123,24 @@ function AppHeader({ onOpenSettings }: AppHeaderProps) {
 
         {/* 作業中にその場で切り替えて見比べる表示だけを置く。一度決めたらあまり変えないもの(波形の縦幅など)は設定ダイアログの「表示設定」に置く */}
         <HeaderMenu title="表示">
-          {(close) => (
-            <button
-              type="button"
-              role="menuitemcheckbox"
-              aria-checked={viewOptions.highlightUnlabeledSegments}
-              onClick={() => {
-                close();
-                toggleViewOption("highlightUnlabeledSegments");
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100"
-            >
-              <span className="w-4 text-center">{viewOptions.highlightUnlabeledSegments ? "✓" : ""}</span>
-              未入力の区間を色分け
-            </button>
-          )}
+          {(close) =>
+            VIEW_OPTION_ITEMS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={viewOptions[key]}
+                onClick={() => {
+                  close();
+                  toggleViewOption(key);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100"
+              >
+                <span className="w-4 text-center">{viewOptions[key] ? "✓" : ""}</span>
+                {label}
+              </button>
+            ))
+          }
         </HeaderMenu>
 
         <button

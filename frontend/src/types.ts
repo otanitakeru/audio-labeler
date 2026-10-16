@@ -16,10 +16,15 @@ export type Segment = {
   label: string;
 };
 
+// スペクトログラムの色(設定ダイアログの「表示設定」で選ぶ)
+export type SpectrogramColorMap = "gray" | "roseus" | "viridis";
+
 // ヘッダーの「表示」メニューで切り替える、編集画面の表示のオン/オフ
 export type ViewOptions = {
   // ラベルが空の区間を、ラベルがある区間と違う色にする(どこに未入力が残っているかを見つけやすくするため)
   highlightUnlabeledSegments: boolean;
+  // メイン波形とラベル帯の間にスペクトログラムを出す(発話区間の境界や子音・無声区間を見分けるため)
+  showSpectrogram: boolean;
 };
 
 // 再生ボタンの横で変える、再生の速さと音量

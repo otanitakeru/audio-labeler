@@ -7,10 +7,14 @@ import VadSettingsSection from "./VadSettingsSection";
 import {
   DEFAULT_MAIN_WAVEFORM_HEIGHT,
   DEFAULT_MINIMAP_HEIGHT,
+  DEFAULT_SPECTROGRAM_HEIGHT,
   MAX_MAIN_WAVEFORM_HEIGHT,
   MAX_MINIMAP_HEIGHT,
+  MAX_SPECTROGRAM_HEIGHT,
   MIN_MAIN_WAVEFORM_HEIGHT,
   MIN_MINIMAP_HEIGHT,
+  MIN_SPECTROGRAM_HEIGHT,
+  SPECTROGRAM_WINDOW_MS_OPTIONS,
   useDisplaySettings,
 } from "../hooks/useDisplaySettings";
 import {
@@ -23,7 +27,7 @@ import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import { findTranscriptionSettingsError, useTranscriptionSettings } from "../hooks/useTranscriptionSettings";
 import { findVadSettingsError, useVadSettings } from "../hooks/useVadSettings";
 import { SHORTCUT_CATALOG, SHORTCUT_GROUPS } from "../shortcuts/catalog";
-import type { PlaybackScrollMode } from "../types";
+import type { PlaybackScrollMode, SpectrogramColorMap } from "../types";
 
 const PLAYBACK_SCROLL_MODE_OPTIONS: { value: PlaybackScrollMode; label: string }[] = [
   { value: "page", label: "端に来たらページ送り" },
@@ -31,8 +35,44 @@ const PLAYBACK_SCROLL_MODE_OPTIONS: { value: PlaybackScrollMode; label: string }
   { value: "none", label: "動かさない" },
 ];
 
+const SPECTROGRAM_COLOR_MAP_OPTIONS: { value: SpectrogramColorMap; label: string }[] = [
+  { value: "gray", label: "灰色" },
+  { value: "roseus", label: "Roseus" },
+  { value: "viridis", label: "Viridis" },
+];
+
 const CATEGORIES = ["表示設定", "編集", "自動検出", "文字起こし", "ショートカットキー"] as const;
 type Category = (typeof CATEGORIES)[number];
+
+type HeightSettingProps = {
+  title: string;
+  description: string;
+  min: number;
+  max: number;
+  defaultValue: number;
+  value: number;
+  onChange: (value: number) => void;
+};
+
+// 「表示設定」の縦幅の項目(波形・全体波形・スペクトログラムで共通)
+function HeightSetting({ title, description, min, max, defaultValue, value, onChange }: HeightSettingProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="font-semibold text-gray-900">{title}</div>
+      <p className="m-0 text-sm text-gray-500">{description}</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <NumberInput unit="px" min={min} max={max} value={value} onChange={onChange} />
+        <button
+          type="button"
+          onClick={() => onChange(defaultValue)}
+          className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+        >
+          デフォルトに戻す
+        </button>
+      </div>
+    </div>
+  );
+}
 
 type SettingsPanelProps = {
   onClose: () => void;
@@ -47,6 +87,12 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
     setMainWaveformHeight,
     minimapHeight,
     setMinimapHeight,
+    spectrogramHeight,
+    setSpectrogramHeight,
+    spectrogramColorMap,
+    setSpectrogramColorMap,
+    spectrogramWindowMs,
+    setSpectrogramWindowMs,
     playbackScrollMode,
     setPlaybackScrollMode,
   } = useDisplaySettings();
@@ -57,6 +103,9 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   const [draftMainWaveformHeight, setDraftMainWaveformHeight] = useState(mainWaveformHeight);
   const [draftMinimapHeight, setDraftMinimapHeight] = useState(minimapHeight);
+  const [draftSpectrogramHeight, setDraftSpectrogramHeight] = useState(spectrogramHeight);
+  const [draftSpectrogramColorMap, setDraftSpectrogramColorMap] = useState(spectrogramColorMap);
+  const [draftSpectrogramWindowMs, setDraftSpectrogramWindowMs] = useState(spectrogramWindowMs);
   const [draftPlaybackScrollMode, setDraftPlaybackScrollMode] = useState(playbackScrollMode);
   const [draftBindings, setDraftBindings] = useState(bindings);
   const [draftVadSettings, setDraftVadSettings] = useState(vadSettings);
@@ -75,6 +124,9 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const applyAndClose = () => {
     setMainWaveformHeight(draftMainWaveformHeight);
     setMinimapHeight(draftMinimapHeight);
+    setSpectrogramHeight(draftSpectrogramHeight);
+    setSpectrogramColorMap(draftSpectrogramColorMap);
+    setSpectrogramWindowMs(draftSpectrogramWindowMs);
     setPlaybackScrollMode(draftPlaybackScrollMode);
     setBindings(draftBindings);
     setVadSettings(draftVadSettings);
@@ -109,48 +161,65 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
           <div className="flex flex-1 flex-col gap-6 overflow-y-auto">
             <h2 className="m-0 text-xl font-semibold text-gray-900">表示設定</h2>
 
+            <HeightSetting
+              title="波形の高さ"
+              description="編集画面で拡大表示する波形の縦幅を調整します。"
+              min={MIN_MAIN_WAVEFORM_HEIGHT}
+              max={MAX_MAIN_WAVEFORM_HEIGHT}
+              defaultValue={DEFAULT_MAIN_WAVEFORM_HEIGHT}
+              value={draftMainWaveformHeight}
+              onChange={setDraftMainWaveformHeight}
+            />
+
+            <HeightSetting
+              title="全体波形の高さ"
+              description="音声全体を縮小表示する波形(現在の表示範囲がハイライトされます)の縦幅を調整します。"
+              min={MIN_MINIMAP_HEIGHT}
+              max={MAX_MINIMAP_HEIGHT}
+              defaultValue={DEFAULT_MINIMAP_HEIGHT}
+              value={draftMinimapHeight}
+              onChange={setDraftMinimapHeight}
+            />
+
+            <HeightSetting
+              title="スペクトログラムの高さ"
+              description="「表示」メニューでスペクトログラムをオンにしたときの縦幅を調整します。"
+              min={MIN_SPECTROGRAM_HEIGHT}
+              max={MAX_SPECTROGRAM_HEIGHT}
+              defaultValue={DEFAULT_SPECTROGRAM_HEIGHT}
+              value={draftSpectrogramHeight}
+              onChange={setDraftSpectrogramHeight}
+            />
+
             <div className="flex flex-col gap-2">
-              <div className="font-semibold text-gray-900">波形の高さ</div>
-              <p className="m-0 text-sm text-gray-500">編集画面で拡大表示する波形の縦幅を調整します。</p>
-              <div className="flex flex-wrap items-center gap-3">
-                <NumberInput
-                  unit="px"
-                  min={MIN_MAIN_WAVEFORM_HEIGHT}
-                  max={MAX_MAIN_WAVEFORM_HEIGHT}
-                  value={draftMainWaveformHeight}
-                  onChange={setDraftMainWaveformHeight}
-                />
-                <button
-                  type="button"
-                  onClick={() => setDraftMainWaveformHeight(DEFAULT_MAIN_WAVEFORM_HEIGHT)}
-                  className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                >
-                  デフォルトに戻す
-                </button>
-              </div>
+              <div className="font-semibold text-gray-900">スペクトログラムの色</div>
+              {SPECTROGRAM_COLOR_MAP_OPTIONS.map((option) => (
+                <label key={option.value} className="inline-flex cursor-pointer items-center gap-2 text-gray-900">
+                  <input
+                    type="radio"
+                    name="spectrogramColorMap"
+                    checked={draftSpectrogramColorMap === option.value}
+                    onChange={() => setDraftSpectrogramColorMap(option.value)}
+                  />
+                  {option.label}
+                </label>
+              ))}
             </div>
 
             <div className="flex flex-col gap-2">
-              <div className="font-semibold text-gray-900">全体波形の高さ</div>
-              <p className="m-0 text-sm text-gray-500">
-                音声全体を縮小表示する波形(現在の表示範囲がハイライトされます)の縦幅を調整します。
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <NumberInput
-                  unit="px"
-                  min={MIN_MINIMAP_HEIGHT}
-                  max={MAX_MINIMAP_HEIGHT}
-                  value={draftMinimapHeight}
-                  onChange={setDraftMinimapHeight}
-                />
-                <button
-                  type="button"
-                  onClick={() => setDraftMinimapHeight(DEFAULT_MINIMAP_HEIGHT)}
-                  className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                >
-                  デフォルトに戻す
-                </button>
-              </div>
+              <div className="font-semibold text-gray-900">スペクトログラムの窓の長さ</div>
+              <p className="m-0 text-sm text-gray-500">短いほど時間方向が、長いほど周波数方向が細かくなります。</p>
+              {SPECTROGRAM_WINDOW_MS_OPTIONS.map((windowMs) => (
+                <label key={windowMs} className="inline-flex cursor-pointer items-center gap-2 text-gray-900">
+                  <input
+                    type="radio"
+                    name="spectrogramWindowMs"
+                    checked={draftSpectrogramWindowMs === windowMs}
+                    onChange={() => setDraftSpectrogramWindowMs(windowMs)}
+                  />
+                  {windowMs} ms
+                </label>
+              ))}
             </div>
 
             <div className="flex flex-col gap-2">

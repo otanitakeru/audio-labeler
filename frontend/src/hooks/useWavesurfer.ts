@@ -89,6 +89,14 @@ const UNLABELED_SEGMENT_COLORS: SegmentColors = {
   labelBorder: "#e11d48",
   minimap: "rgba(225, 29, 72, 0.35)",
 };
+// スペクトログラムの上に重ねる、アクティブな区間の色(アクティブでない区間は塗らない)。普段の青はRoseus・Viridisの
+// 暗い側に埋もれて見えないため、色の表ごとに、表に含まれない色相(Roseusは黒〜紫〜橙〜白なので水色、
+// Viridisは紫〜緑〜黄なのでピンク)を使う
+const SPECTROGRAM_ACTIVE_SEGMENT_COLORS: Record<SpectrogramColorMap, string> = {
+  gray: SEGMENT_COLORS.activeRegion,
+  roseus: "rgba(34, 211, 238, 0.3)",
+  viridis: "rgba(244, 114, 182, 0.3)",
+};
 
 // 文字起こしで処理中の区間の塗りを、処理し終わった区間の緑と濃い緑の間でなめらかに行き来させる(速さは実行中の枠の色の
 // 変化(index.cssのborder-pulse)と揃える)。区間はwavesurferのShadow DOMの中にありページのCSSが届かないため、要素に直接かける
@@ -135,15 +143,21 @@ function getSegmentColors(
 
 type RegionFill = {
   setColors: (colors: SegmentColors, isActive: boolean) => void;
-  setSpectrogramHeight: (height: number) => void;
+  // 高さ・色の表を変えたら、続けてsetColorsを呼んで塗り直す
+  setSpectrogram: (height: number, colorMap: SpectrogramColorMap) => void;
   // 文字起こしで処理中の区間の塗りを動かす帯(スペクトログラムの部分は動かさない)
   statusBands: HTMLElement[];
 };
 
-// 区間の塗り。波形とラベル領域には区間の状態に応じた色(未入力の赤・実行中の灰色や緑)を塗り、スペクトログラムの部分には
-// 普段の青だけを塗る(色の濃淡を読み取る邪魔にならないようにするため。PLAN.md 5章)。区間(Region)の要素の背景色では
-// 高さ方向に塗り分けられないため、要素の背景は透明にして帯を重ねる
-function createRegionFill(element: HTMLElement, mainWaveformHeight: number, spectrogramHeight: number): RegionFill {
+// 区間の塗り。波形とラベル領域には区間の状態に応じた色(未入力の赤・実行中の灰色や緑)を塗り、スペクトログラムの部分は
+// アクティブな区間だけを、状態によらず色の表に合わせた色で塗る(色の濃淡を読み取る邪魔にならないようにするため。
+// PLAN.md 5章)。区間(Region)の要素の背景色では高さ方向に塗り分けられないため、要素の背景は透明にして帯を重ねる
+function createRegionFill(
+  element: HTMLElement,
+  mainWaveformHeight: number,
+  spectrogramHeight: number,
+  spectrogramColorMap: SpectrogramColorMap,
+): RegionFill {
   const createBand = () => {
     const band = document.createElement("div");
     band.style.cssText = "position:absolute;left:0;right:0;pointer-events:none";
@@ -158,20 +172,22 @@ function createRegionFill(element: HTMLElement, mainWaveformHeight: number, spec
   waveformBand.style.height = `${mainWaveformHeight}px`;
   spectrogramBand.style.top = `${mainWaveformHeight}px`;
   labelAreaBand.style.bottom = "0";
-  const setSpectrogramHeight = (height: number) => {
+  let spectrogramActiveColor = SPECTROGRAM_ACTIVE_SEGMENT_COLORS[spectrogramColorMap];
+  const setSpectrogram = (height: number, colorMap: SpectrogramColorMap) => {
     spectrogramBand.style.height = `${height}px`;
     labelAreaBand.style.top = `${mainWaveformHeight + height}px`;
+    spectrogramActiveColor = SPECTROGRAM_ACTIVE_SEGMENT_COLORS[colorMap];
   };
-  setSpectrogramHeight(spectrogramHeight);
+  setSpectrogram(spectrogramHeight, spectrogramColorMap);
 
   return {
     setColors: (colors, isActive) => {
       const color = isActive ? colors.activeRegion : colors.region;
       waveformBand.style.backgroundColor = color;
       labelAreaBand.style.backgroundColor = color;
-      spectrogramBand.style.backgroundColor = isActive ? SEGMENT_COLORS.activeRegion : SEGMENT_COLORS.region;
+      spectrogramBand.style.backgroundColor = isActive ? spectrogramActiveColor : "transparent";
     },
-    setSpectrogramHeight,
+    setSpectrogram,
     statusBands: [waveformBand, labelAreaBand],
   };
 }
@@ -648,6 +664,8 @@ export function useWavesurfer(
   mainWaveformHeightRef.current = mainWaveformHeight;
   const spectrogramHeightRef = useRef(spectrogramHeight);
   spectrogramHeightRef.current = spectrogramHeight;
+  const spectrogramColorMapRef = useRef(spectrogramColorMap);
+  spectrogramColorMapRef.current = spectrogramColorMap;
   // 生成時に参照するだけで、変更は下のeffectでsetOptionsにより反映する(波形を作り直さないため)
   const playbackScrollModeRef = useRef(playbackScrollMode);
   playbackScrollModeRef.current = playbackScrollMode;
@@ -951,7 +969,12 @@ export function useWavesurfer(
       });
       const element = region.element;
       if (!element) continue;
-      const fill = createRegionFill(element, mainWaveformHeightRef.current, spectrogramHeightRef.current);
+      const fill = createRegionFill(
+        element,
+        mainWaveformHeightRef.current,
+        spectrogramHeightRef.current,
+        spectrogramColorMapRef.current,
+      );
       fill.setColors(colors, false);
 
       // ドラッグ中は見た目(region)だけを動かし、離したときに一度だけ状態へ反映する。
@@ -1029,8 +1052,8 @@ export function useWavesurfer(
       const update = (latest: Segment) => {
         colors = getColors(latest);
         setLabelContentColors(content, colors.labelBackground, colors.labelBorder);
+        fill.setSpectrogram(spectrogramHeightRef.current, spectrogramColorMapRef.current);
         fill.setColors(colors, activeSegmentRef.current?.id === id);
-        fill.setSpectrogramHeight(spectrogramHeightRef.current);
         syncAppearance();
         if (region.start !== latest.startSec || region.end !== latest.endSec) {
           region.setOptions({ start: latest.startSec, end: latest.endSec });
@@ -1080,8 +1103,8 @@ export function useWavesurfer(
         if (label !== getCurrentLabel()) onUpdateLabelRef.current(id, label);
       });
     }
-    // 文字起こしの開始・終了、処理中の区間の移り変わり、未入力の区間の色分けの切り替え、スペクトログラムの出し入れでも
-    // 見た目を更新するため、区間が変わらなくても走らせる
+    // 文字起こしの開始・終了、処理中の区間の移り変わり、未入力の区間の色分けの切り替え、スペクトログラムの出し入れ・
+    // 色の表の切り替えでも見た目を更新するため、区間が変わらなくても走らせる
   }, [
     segments,
     isReady,
@@ -1090,6 +1113,7 @@ export function useWavesurfer(
     processedSegmentIds,
     highlightUnlabeledSegments,
     spectrogramHeight,
+    spectrogramColorMap,
   ]);
 
   // 全体波形の上に確定済み区間の範囲と、自動検出の途中経過を表示する。数が多くても描き直しは軽いため、変わるたびに全て作り直す

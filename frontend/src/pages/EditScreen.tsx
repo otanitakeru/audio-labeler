@@ -114,6 +114,7 @@ function EditScreen() {
     isSpectrogramComputing,
     togglePlay,
     getSelectedSegment,
+    revealEditedRanges,
     deleteSelectedSegment,
     deselectSegment,
     selectAdjacentSegment,
@@ -169,8 +170,17 @@ function EditScreen() {
       selectPreviousSegment: () => selectAdjacentSegment("previous"),
       selectNextSegment: () => selectAdjacentSegment("next"),
       editSegmentLabel: editSelectedSegmentLabel,
-      undo,
-      redo,
+      // 変わった区間が見えていなければ、その場所まで表示位置を動かす
+      undo: () => {
+        const changed = undo();
+        if (!changed) return false;
+        revealEditedRanges(changed);
+      },
+      redo: () => {
+        const changed = redo();
+        if (!changed) return false;
+        revealEditedRanges(changed);
+      },
       mergeWithPreviousSegment: () => mergeSelectedSegment("previous"),
       mergeWithNextSegment: () => mergeSelectedSegment("next"),
       nudgeSegmentStartLeft: (e) => nudgeSelectedSegment("start", "left", e.repeat),
@@ -183,6 +193,7 @@ function EditScreen() {
         const selectedSegment = getSelectedSegment();
         if (!selectedSegment) return;
         stopPlayback();
+        revealEditedRanges([selectedSegment]);
         requestDetection(lastUsedPresets.selectedSegment.id, selectedSegment);
       },
     },

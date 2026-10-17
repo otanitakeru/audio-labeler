@@ -108,8 +108,8 @@ Mac の表記です。Windows 等では <kbd>⌘</kbd> を <kbd>Ctrl</kbd>、<kb
 | 区間の選択を解除         | <kbd>Esc</kbd>                                                                            |
 | 前 / 次の区間を選択      | <kbd>←</kbd> / <kbd>→</kbd>                                                               |
 | 前 / 次の区間と結合      | <kbd>⌥</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                                                |
-| 開始をずらす             | <kbd>⌘</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                                                |
-| 終了をずらす             | <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                             |
+| 開始をずらす             | <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                             |
+| 終了をずらす             | <kbd>⌘</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                                                |
 | 元に戻す                 | <kbd>⌘</kbd> + <kbd>Z</kbd>                                                               |
 | やり直す                 | <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd>(Windows は <kbd>Ctrl</kbd> + <kbd>Y</kbd>) |
 

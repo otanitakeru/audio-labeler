@@ -88,25 +88,25 @@ export const SHORTCUT_CATALOG: ShortcutDef[] = [
     id: "nudgeSegmentStartLeft",
     label: "開始を左へずらす",
     group: "区間の調整",
-    defaultCombo: combo("ArrowLeft", PRIMARY_MODIFIER),
+    defaultCombo: combo("ArrowLeft", { ...PRIMARY_MODIFIER, shift: true }),
   },
   {
     id: "nudgeSegmentStartRight",
     label: "開始を右へずらす",
     group: "区間の調整",
-    defaultCombo: combo("ArrowRight", PRIMARY_MODIFIER),
+    defaultCombo: combo("ArrowRight", { ...PRIMARY_MODIFIER, shift: true }),
   },
   {
     id: "nudgeSegmentEndLeft",
     label: "終了を左へずらす",
     group: "区間の調整",
-    defaultCombo: combo("ArrowLeft", { ...PRIMARY_MODIFIER, shift: true }),
+    defaultCombo: combo("ArrowLeft", PRIMARY_MODIFIER),
   },
   {
     id: "nudgeSegmentEndRight",
     label: "終了を右へずらす",
     group: "区間の調整",
-    defaultCombo: combo("ArrowRight", { ...PRIMARY_MODIFIER, shift: true }),
+    defaultCombo: combo("ArrowRight", PRIMARY_MODIFIER),
   },
   // ⌘ + D / Ctrl + D はブラウザでは「ブックマークに追加」だが、このショートカットは選択中の区間がなくてもキーを素通ししないため使える
   {

@@ -99,19 +99,20 @@
 Mac の表記です。Windows 等では <kbd>⌘</kbd> を <kbd>Ctrl</kbd>、<kbd>⌥</kbd> を <kbd>Alt</kbd> に読み替えてください。
 割り当ては設定ダイアログで変更できます。
 
-| 操作                     | キー                                                                                      |
-| ------------------------ | ----------------------------------------------------------------------------------------- |
-| 再生 / 一時停止          | <kbd>Space</kbd>                                                                          |
-| 選択範囲にラベルを追加   | <kbd>⌘</kbd> + <kbd>B</kbd>                                                               |
-| 選択中の区間の文言を編集 | <kbd>Enter</kbd>                                                                          |
-| 選択中の区間を削除       | <kbd>Backspace</kbd>                                                                      |
-| 区間の選択を解除         | <kbd>Esc</kbd>                                                                            |
-| 前 / 次の区間を選択      | <kbd>←</kbd> / <kbd>→</kbd>                                                               |
-| 前 / 次の区間と結合      | <kbd>⌥</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                                                |
-| 開始をずらす             | <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                             |
-| 終了をずらす             | <kbd>⌘</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                                                |
-| 元に戻す                 | <kbd>⌘</kbd> + <kbd>Z</kbd>                                                               |
-| やり直す                 | <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd>(Windows は <kbd>Ctrl</kbd> + <kbd>Y</kbd>) |
+| 操作                     | キー                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------- |
+| 再生 / 一時停止          | <kbd>Space</kbd>                                                                                   |
+| 選択範囲にラベルを追加   | <kbd>⌘</kbd> + <kbd>B</kbd>                                                                        |
+| 選択中の区間の文言を編集 | <kbd>Enter</kbd>                                                                                   |
+| 選択中の区間を削除       | <kbd>Backspace</kbd>                                                                               |
+| 区間の選択を解除         | <kbd>Esc</kbd>                                                                                     |
+| 前 / 次の区間を選択      | <kbd>←</kbd> / <kbd>→</kbd>                                                                        |
+| 前 / 次の区間と結合      | <kbd>⌥</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                                                         |
+| 開始をずらす             | <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                                      |
+| 終了をずらす             | <kbd>⌘</kbd> + <kbd>←</kbd> / <kbd>→</kbd>                                                         |
+| 選択中の区間を自動検出   | <kbd>⌘</kbd> + <kbd>D</kbd>(プリセットを選ぶときは <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd>) |
+| 元に戻す                 | <kbd>⌘</kbd> + <kbd>Z</kbd>                                                                        |
+| やり直す                 | <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd>(Windows は <kbd>Ctrl</kbd> + <kbd>Y</kbd>)          |
 
 開始・終了をずらす量は、設定ダイアログの「編集」で変えられます(既定 10ms)。キーを押し続けると、1回あたりの移動量が段階的に増えます(最大 100ms)。
 

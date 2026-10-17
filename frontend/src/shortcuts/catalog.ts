@@ -18,7 +18,8 @@ export type ShortcutId =
   | "nudgeSegmentStartRight"
   | "nudgeSegmentEndLeft"
   | "nudgeSegmentEndRight"
-  | "detectSpeechInSelectedSegment";
+  | "detectSpeechInSelectedSegment"
+  | "chooseDetectionPresetForSelectedSegment";
 
 export type KeyCombo = {
   key: string;
@@ -114,6 +115,13 @@ export const SHORTCUT_CATALOG: ShortcutDef[] = [
     label: "選択中の区間を自動検出",
     group: "区間の調整",
     defaultCombo: combo("d", PRIMARY_MODIFIER),
+  },
+  // ⌘ + Shift + D / Ctrl + Shift + D はブラウザでは「すべてのタブをブックマークに追加」だが、上と同じくキーを素通ししないため使える
+  {
+    id: "chooseDetectionPresetForSelectedSegment",
+    label: "プリセットを選んで自動検出",
+    group: "区間の調整",
+    defaultCombo: combo("d", { ...PRIMARY_MODIFIER, shift: true }),
   },
 ];
 

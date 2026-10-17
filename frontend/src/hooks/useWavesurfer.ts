@@ -27,7 +27,7 @@ const MAX_VERTICAL_ZOOM = 10;
 const WHEEL_ZOOM_FACTOR = 1.1;
 // リサイズ/ドラッグ選択時に区間の長さが0にならないようにする下限(秒)
 const MIN_REGION_LENGTH_SEC = 0.01;
-// キーボードで区間を選択して表示位置を動かすとき、区間の手前に空けておく余白(表示幅に対する割合)
+// キーボードでの区間の選択・見えていない所の編集で表示位置を動かすとき、区間の手前に空けておく余白(表示幅に対する割合)
 const SCROLL_MARGIN_RATIO = 0.1;
 // キーで区間の開始/終了をずらすとき、押し続けた時間(ms)に応じて1回あたりの移動量にかける倍率(時間の昇順)。
 // 押した回数ではなく時間で決めるのは、OSのキーリピートの速さが環境によって違うため
@@ -222,13 +222,34 @@ function roundFloatingError(sec: number): number {
   return Number(sec.toFixed(9));
 }
 
+type TimeRange = Pick<Segment, "startSec" | "endSec">;
+
+function getViewRange(wavesurfer: WaveSurfer): TimeRange {
+  const pxPerSec = wavesurfer.getWrapper().clientWidth / wavesurfer.getDuration();
+  const startSec = wavesurfer.getScroll() / pxPerSec;
+  return { startSec, endSec: startSec + wavesurfer.getWidth() / pxPerSec };
+}
+
+// 指定の時刻が左端の少し内側に来るよう表示位置を動かす
+function scrollToNearLeftEdge(wavesurfer: WaveSurfer, view: TimeRange, sec: number): void {
+  wavesurfer.setScrollTime(Math.max(0, sec - (view.endSec - view.startSec) * SCROLL_MARGIN_RATIO));
+}
+
 // 区間が表示範囲に収まっていなければ、区間の先頭が左端の少し内側に来るよう表示位置を動かす
 function scrollSegmentIntoView(wavesurfer: WaveSurfer, segment: Segment): void {
-  const pxPerSec = wavesurfer.getWrapper().clientWidth / wavesurfer.getDuration();
-  const viewStartSec = wavesurfer.getScroll() / pxPerSec;
-  const viewWidthSec = wavesurfer.getWidth() / pxPerSec;
-  if (segment.startSec >= viewStartSec && segment.endSec <= viewStartSec + viewWidthSec) return;
-  wavesurfer.setScrollTime(Math.max(0, segment.startSec - viewWidthSec * SCROLL_MARGIN_RATIO));
+  const view = getViewRange(wavesurfer);
+  if (segment.startSec >= view.startSec && segment.endSec <= view.endSec) return;
+  scrollToNearLeftEdge(wavesurfer, view, segment.startSec);
+}
+
+// 変えた区間が1つも表示範囲に入っていなければ、最も早いものの先頭が左端の少し内側に来るよう表示位置を動かす。
+// 一部でも見えていれば動かさない(全体に及ぶ変更を戻したときに、表示位置が飛ばないようにするため)。
+// 再生中は動かさない(再生位置への追従で引き戻されるうえ、聞いている所を見続けられるようにするため。PLAN.md 4章)
+function scrollEditedRangesIntoView(wavesurfer: WaveSurfer, ranges: TimeRange[]): void {
+  if (ranges.length === 0 || wavesurfer.isPlaying()) return;
+  const view = getViewRange(wavesurfer);
+  if (ranges.some((r) => r.endSec >= view.startSec && r.startSec <= view.endSec)) return;
+  scrollToNearLeftEdge(wavesurfer, view, Math.min(...ranges.map((r) => r.startSec)));
 }
 
 function getPeakAmplitude(audioBuffer: AudioBuffer | null): number {
@@ -582,6 +603,8 @@ type UseWavesurferResult = {
   togglePlay: () => void;
   // 選択中の区間。なければnull
   getSelectedSegment: () => Segment | null;
+  // 変えた区間が1つも見えていなければ、その場所まで表示位置を動かす(再生中は動かさない)
+  revealEditedRanges: (ranges: TimeRange[]) => void;
   // 選択中の区間がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   deleteSelectedSegment: () => boolean;
   deselectSegment: () => boolean;
@@ -1294,9 +1317,22 @@ export function useWavesurfer(
     return (activeId && segmentsRef.current.find((s) => s.id === activeId)) || null;
   };
 
+  // 見えていない所の区間を変えたときに、その場所まで表示位置を動かす(PLAN.md 4章)。
+  // 選択中の区間へのキー操作のほか、元に戻す/やり直すで変わった区間を表示するのに使う
+  const revealEditedRanges = (ranges: TimeRange[]) => {
+    const wavesurfer = wavesurferRef.current;
+    if (wavesurfer) scrollEditedRangesIntoView(wavesurfer, ranges);
+  };
+
+  const revealSelectedSegment = () => {
+    const selected = getSelectedSegment();
+    if (selected) revealEditedRanges([selected]);
+  };
+
   const deleteSelectedSegment = () => {
     const active = activeSegmentRef.current;
     if (!active) return false;
+    revealSelectedSegment();
     activeSegmentRef.current = null;
     onDeleteSegmentRef.current(active.id);
     return true;
@@ -1337,6 +1373,7 @@ export function useWavesurfer(
   const editSelectedSegmentLabel = () => {
     const active = activeSegmentRef.current;
     if (!active) return false;
+    revealSelectedSegment();
     active.startEditing();
     return true;
   };
@@ -1345,7 +1382,9 @@ export function useWavesurfer(
   // 素通しすると編集画面から離れてしまう
   const mergeSelectedSegment = (direction: SegmentDirection) => {
     const active = activeSegmentRef.current;
-    if (active) onMergeSegmentRef.current(active.id, direction);
+    if (!active) return;
+    revealSelectedSegment();
+    onMergeSegmentRef.current(active.id, direction);
   };
 
   // 調整帯でのドラッグと同じ制約(音声の範囲内・最短の長さ)をかけ、重なりなどはonUpdateRangeの検証に任せる。
@@ -1359,6 +1398,10 @@ export function useWavesurfer(
     const activeId = activeSegmentRef.current?.id;
     const segment = activeId ? segmentsRef.current.find((s) => s.id === activeId) : undefined;
     if (!wavesurfer || !segment) return;
+    // 区間の全体ではなく動かす端を見せる(長い区間の終了をずらすとき、開始へ飛ばないように)。
+    // 端に達して動かせない・重なりでエラーになるときも、どこを動かそうとしたか分かるよう先に動かす
+    const edgeSec = edge === "start" ? segment.startSec : segment.endSec;
+    revealEditedRanges([{ startSec: edgeSec, endSec: edgeSec }]);
     const heldMs = performance.now() - nudgeHoldRef.current.startedAtMs;
     const stageMultiplier = NUDGE_ACCELERATION_STAGES.findLast((stage) => heldMs >= stage.afterMs)?.multiplier ?? 1;
     const maxMultiplier = Math.max(1, Math.floor(MAX_ACCELERATED_NUDGE_STEP_MS / segmentNudgeStepMs));
@@ -1446,6 +1489,7 @@ export function useWavesurfer(
     isSpectrogramComputing,
     togglePlay,
     getSelectedSegment,
+    revealEditedRanges,
     deleteSelectedSegment,
     deselectSegment,
     selectAdjacentSegment,

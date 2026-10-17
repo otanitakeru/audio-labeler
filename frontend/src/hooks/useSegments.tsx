@@ -29,9 +29,10 @@ type SegmentsState = {
   // 1回の実行では同じhistoryGroupKeyを渡し、届いた順に入れた結果を履歴上1つの操作にまとめる
   applyTranscribedLabel: (id: string, label: string, historyGroupKey: string) => void;
   // 区間に対する変更(追加・ラベル編集・位置変更・削除・読み込み・自動検出・文字起こし)を1操作ずつ取り消す/やり直す。
-  // 取り消す/やり直す操作がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
-  undo: () => boolean;
-  redo: () => boolean;
+  // 変わった区間(戻す前と後の両方)を返す。変わった場所を表示するため。
+  // 取り消す/やり直す操作がなければnullを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
+  undo: () => Segment[] | null;
+  redo: () => Segment[] | null;
   // 最後に書き出した(または読み込んだ)ときから区間が変わっているか。リロード・タブを閉じるときの確認に使う
   hasUnsavedChanges: boolean;
   // 現在の区間をファイルと一致した状態として記録する。ラベルの書き出し・読み込みの後に呼ぶ
@@ -97,6 +98,14 @@ export function findAdjacentSegment(segments: Segment[], id: string, direction: 
   return sorted[direction === "previous" ? index - 1 : index + 1];
 }
 
+// 2つのスナップショットの間で変わった区間(片方にしかないもの)を返す。
+// 変更は変わった区間だけを新しいオブジェクトに置き換えるため、変わっていない区間は参照で見分けられる
+function findChangedSegments(before: Segment[], after: Segment[]): Segment[] {
+  const beforeSet = new Set(before);
+  const afterSet = new Set(after);
+  return [...before.filter((s) => !afterSet.has(s)), ...after.filter((s) => !beforeSet.has(s))];
+}
+
 const SegmentsContext = createContext<SegmentsState | null>(null);
 
 export function SegmentsProvider({ children }: { children: ReactNode }) {
@@ -121,8 +130,8 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
     });
   }
 
-  function undo(): boolean {
-    if (history.past.length === 0) return false;
+  function undo(): Segment[] | null {
+    if (history.past.length === 0) return null;
     setHistory((h) => ({
       ...h,
       past: h.past.slice(0, -1),
@@ -130,11 +139,11 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
       future: [h.present, ...h.future],
       lastGroupKey: null,
     }));
-    return true;
+    return findChangedSegments(history.present, history.past[history.past.length - 1]);
   }
 
-  function redo(): boolean {
-    if (history.future.length === 0) return false;
+  function redo(): Segment[] | null {
+    if (history.future.length === 0) return null;
     setHistory((h) => ({
       ...h,
       past: [...h.past, h.present],
@@ -142,7 +151,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
       future: h.future.slice(1),
       lastGroupKey: null,
     }));
-    return true;
+    return findChangedSegments(history.present, history.future[0]);
   }
 
   function validateNewSegment(startSec: number, endSec: number): string | null {

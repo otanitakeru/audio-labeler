@@ -110,6 +110,33 @@ function pulseHighlightedBackground(el: HTMLElement, highlighted: string, proces
   });
 }
 
+// 境界を動かしたときに出す縦線。区間の調整帯で選択中のつまみと同じ色にし、区間の端だと分かるようにする
+const EDGE_FLASH_COLOR = "#2563eb";
+const EDGE_FLASH_WIDTH_PX = 2;
+const EDGE_FLASH_DURATION_MS = 1000;
+
+// 動かした境界の位置に縦線を出し、少し保ってから消す。新しく出すときは前の線を消す(PLAN.md 4章)
+function flashEdgeLines(layer: HTMLElement, edgeSecs: number[], duration: number): void {
+  layer.replaceChildren(
+    ...edgeSecs.map((sec) => {
+      const line = document.createElement("div");
+      line.style.cssText = [
+        "position:absolute",
+        "top:0",
+        "bottom:0",
+        `left:${(sec / duration) * 100}%`,
+        `width:${EDGE_FLASH_WIDTH_PX}px`,
+        `margin-left:-${EDGE_FLASH_WIDTH_PX / 2}px`,
+        `background:${EDGE_FLASH_COLOR}`,
+      ].join(";");
+      line
+        .animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }], { duration: EDGE_FLASH_DURATION_MS })
+        .addEventListener("finish", () => line.remove());
+      return line;
+    }),
+  );
+}
+
 // 時間の範囲を、親要素(波形全体の幅を持つ要素)に対する割合で置いた帯を作る
 function createRangeBar(
   range: Pick<Segment, "startSec" | "endSec">,
@@ -605,6 +632,8 @@ type UseWavesurferResult = {
   getSelectedSegment: () => Segment | null;
   // 変えた区間が1つも見えていなければ、その場所まで表示位置を動かす(再生中は動かさない)
   revealEditedRanges: (ranges: TimeRange[]) => void;
+  // 動かした境界の位置に縦線を出し、1秒ほどで消す。前に出した線は消す
+  flashEdges: (edgeSecs: number[]) => void;
   // 選択中の区間がなければfalseを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
   deleteSelectedSegment: () => boolean;
   deselectSegment: () => boolean;
@@ -665,6 +694,7 @@ export function useWavesurfer(
   const minimapSegmentLayerRef = useRef<HTMLDivElement | null>(null);
   // メイン波形の上に自動検出の途中経過を表示するレイヤー
   const detectionPreviewLayerRef = useRef<HTMLDivElement | null>(null);
+  const edgeFlashLayerRef = useRef<HTMLDivElement | null>(null);
   // 全体波形とメイン波形の間の時間の目盛りと、縦の補助線
   const timeAxisViewRef = useRef<TimeAxisView | null>(null);
   // イベントハンドラは初期化effect内で一度だけ登録するため、最新の値を参照できるようrefに控える
@@ -808,6 +838,12 @@ export function useWavesurfer(
     detectionPreviewLayer.style.cssText = `position:absolute;top:0;left:0;right:0;height:${mainWaveformHeight}px;z-index:2;pointer-events:none`;
     wavesurfer.getWrapper().appendChild(detectionPreviewLayer);
     detectionPreviewLayerRef.current = detectionPreviewLayer;
+    // 境界の線は、波形からラベル領域まで(wrapper全体)を貫いて出す。
+    // 区間(Region)のコンテナ(z-index:5)に隠れないよう、それより手前に置く
+    const edgeFlashLayer = document.createElement("div");
+    edgeFlashLayer.style.cssText = "position:absolute;inset:0;z-index:6;pointer-events:none";
+    wavesurfer.getWrapper().appendChild(edgeFlashLayer);
+    edgeFlashLayerRef.current = edgeFlashLayer;
 
     const minimapElement = getMinimapElement(wavesurfer);
     minimapElementRef.current = minimapElement;
@@ -875,6 +911,7 @@ export function useWavesurfer(
       minimapElementRef.current = null;
       minimapSegmentLayerRef.current = null;
       detectionPreviewLayerRef.current = null;
+      edgeFlashLayerRef.current = null;
       disableDragSelection();
       wavesurfer.destroy();
       void audioContext.close();
@@ -1324,6 +1361,14 @@ export function useWavesurfer(
     if (wavesurfer) scrollEditedRangesIntoView(wavesurfer, ranges);
   };
 
+  // 動かした境界の位置に縦線を出し、1秒ほどで消す(PLAN.md 4章)。
+  // 開始/終了をずらすキーのほか、元に戻す/やり直すで動いた境界を示すのに使う
+  const flashEdges = (edgeSecs: number[]) => {
+    const layer = edgeFlashLayerRef.current;
+    const duration = wavesurferRef.current?.getDuration() ?? 0;
+    if (layer && duration > 0) flashEdgeLines(layer, edgeSecs, duration);
+  };
+
   const revealSelectedSegment = () => {
     const selected = getSelectedSegment();
     if (selected) revealEditedRanges([selected]);
@@ -1416,8 +1461,14 @@ export function useWavesurfer(
         startSec + MIN_REGION_LENGTH_SEC,
       );
     }
-    if (startSec === segment.startSec && endSec === segment.endSec) return;
+    // 動かしている端に線を出す。押し続けている間は出し直すので端に付いて動き、離すと消える。
+    // 端に達して動かせない・重なりでエラーになるときは、元の位置に出す
+    if (startSec === segment.startSec && endSec === segment.endSec) {
+      flashEdges([edgeSec]);
+      return;
+    }
     const error = onUpdateRangeRef.current(segment.id, startSec, endSec, nudgeHoldRef.current.historyGroupKey);
+    flashEdges([error ? edgeSec : edge === "start" ? startSec : endSec]);
     if (error) onErrorRef.current(error);
   };
 
@@ -1490,6 +1541,7 @@ export function useWavesurfer(
     togglePlay,
     getSelectedSegment,
     revealEditedRanges,
+    flashEdges,
     deleteSelectedSegment,
     deselectSegment,
     selectAdjacentSegment,

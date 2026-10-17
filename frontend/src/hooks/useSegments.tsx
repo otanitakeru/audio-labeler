@@ -4,6 +4,10 @@ import type { ExistingSegmentsMode, Segment, SegmentDirection } from "../types";
 
 type SegmentMutationResult = { success: true } | { success: false; error: string };
 
+// 変更の前後で変わった区間。removedは変更前にしかないもの、addedは変更後にしかないもの。
+// 位置や文言が変わった区間は、変更前の姿がremovedに、変更後の姿がaddedに(同じIDで)入る
+export type SegmentsChange = { removed: Segment[]; added: Segment[] };
+
 type SegmentsState = {
   segments: Segment[];
   // 新しい区間を追加できるかだけを検証する(エラーがあればメッセージを返す)。ラベル入力を始める前のチェックに使う
@@ -29,10 +33,10 @@ type SegmentsState = {
   // 1回の実行では同じhistoryGroupKeyを渡し、届いた順に入れた結果を履歴上1つの操作にまとめる
   applyTranscribedLabel: (id: string, label: string, historyGroupKey: string) => void;
   // 区間に対する変更(追加・ラベル編集・位置変更・削除・読み込み・自動検出・文字起こし)を1操作ずつ取り消す/やり直す。
-  // 変わった区間(戻す前と後の両方)を返す。変わった場所を表示するため。
+  // 変わった区間を返す。変わった場所を表示するため。
   // 取り消す/やり直す操作がなければnullを返す(ショートカットとして使ったとき、キー本来の動作を妨げないため)
-  undo: () => Segment[] | null;
-  redo: () => Segment[] | null;
+  undo: () => SegmentsChange | null;
+  redo: () => SegmentsChange | null;
   // 最後に書き出した(または読み込んだ)ときから区間が変わっているか。リロード・タブを閉じるときの確認に使う
   hasUnsavedChanges: boolean;
   // 現在の区間をファイルと一致した状態として記録する。ラベルの書き出し・読み込みの後に呼ぶ
@@ -100,10 +104,21 @@ export function findAdjacentSegment(segments: Segment[], id: string, direction: 
 
 // 2つのスナップショットの間で変わった区間(片方にしかないもの)を返す。
 // 変更は変わった区間だけを新しいオブジェクトに置き換えるため、変わっていない区間は参照で見分けられる
-function findChangedSegments(before: Segment[], after: Segment[]): Segment[] {
+function findChangedSegments(before: Segment[], after: Segment[]): SegmentsChange {
   const beforeSet = new Set(before);
   const afterSet = new Set(after);
-  return [...before.filter((s) => !afterSet.has(s)), ...after.filter((s) => !beforeSet.has(s))];
+  return { removed: before.filter((s) => !afterSet.has(s)), added: after.filter((s) => !beforeSet.has(s)) };
+}
+
+// 変更で動いた境界(同じ区間の開始/終了が変わったもの)の、変更後の位置を返す。
+// 結合を戻したときは、結合していた区間の端が分かれ目に戻るため、その位置が入る
+export function findMovedEdges({ removed, added }: SegmentsChange): number[] {
+  const beforeById = new Map(removed.map((s) => [s.id, s]));
+  return added.flatMap((s) => {
+    const before = beforeById.get(s.id);
+    if (!before) return [];
+    return [...(s.startSec !== before.startSec ? [s.startSec] : []), ...(s.endSec !== before.endSec ? [s.endSec] : [])];
+  });
 }
 
 const SegmentsContext = createContext<SegmentsState | null>(null);
@@ -130,7 +145,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
     });
   }
 
-  function undo(): Segment[] | null {
+  function undo(): SegmentsChange | null {
     if (history.past.length === 0) return null;
     setHistory((h) => ({
       ...h,
@@ -142,7 +157,7 @@ export function SegmentsProvider({ children }: { children: ReactNode }) {
     return findChangedSegments(history.present, history.past[history.past.length - 1]);
   }
 
-  function redo(): Segment[] | null {
+  function redo(): SegmentsChange | null {
     if (history.future.length === 0) return null;
     setHistory((h) => ({
       ...h,

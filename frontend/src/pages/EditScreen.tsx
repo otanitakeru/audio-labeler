@@ -14,7 +14,7 @@ import { useDisplaySettings } from "../hooks/useDisplaySettings";
 import { useEditingSettings } from "../hooks/useEditingSettings";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { usePlaybackSettings } from "../hooks/usePlaybackSettings";
-import { useSegments } from "../hooks/useSegments";
+import { findMovedEdges, useSegments, type SegmentsChange } from "../hooks/useSegments";
 import { useSpeechDetection } from "../hooks/useSpeechDetection";
 import { useTranscription } from "../hooks/useTranscription";
 import { useVadSettings } from "../hooks/useVadSettings";
@@ -115,6 +115,7 @@ function EditScreen() {
     togglePlay,
     getSelectedSegment,
     revealEditedRanges,
+    flashEdges,
     deleteSelectedSegment,
     deselectSegment,
     selectAdjacentSegment,
@@ -161,6 +162,12 @@ function EditScreen() {
     if (isPlaying) togglePlay();
   };
 
+  // 元に戻す/やり直すで変わった区間が見えていなければ、その場所まで表示位置を動かし、動いた境界に線を出す
+  const showSegmentsChange = (change: SegmentsChange) => {
+    revealEditedRanges([...change.removed, ...change.added]);
+    flashEdges(findMovedEdges(change));
+  };
+
   useKeyboardShortcuts(
     {
       togglePlay,
@@ -170,16 +177,15 @@ function EditScreen() {
       selectPreviousSegment: () => selectAdjacentSegment("previous"),
       selectNextSegment: () => selectAdjacentSegment("next"),
       editSegmentLabel: editSelectedSegmentLabel,
-      // 変わった区間が見えていなければ、その場所まで表示位置を動かす
       undo: () => {
-        const changed = undo();
-        if (!changed) return false;
-        revealEditedRanges(changed);
+        const change = undo();
+        if (!change) return false;
+        showSegmentsChange(change);
       },
       redo: () => {
-        const changed = redo();
-        if (!changed) return false;
-        revealEditedRanges(changed);
+        const change = redo();
+        if (!change) return false;
+        showSegmentsChange(change);
       },
       mergeWithPreviousSegment: () => mergeSelectedSegment("previous"),
       mergeWithNextSegment: () => mergeSelectedSegment("next"),

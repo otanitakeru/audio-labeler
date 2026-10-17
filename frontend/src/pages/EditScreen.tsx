@@ -202,6 +202,13 @@ function EditScreen() {
         revealEditedRanges([selectedSegment]);
         requestDetection(lastUsedPresets.selectedSegment.id, selectedSegment);
       },
+      // プリセットを変えて検出し直すとき用に、選んだ区間で「自動検出」ボタンを押したときと同じダイアログを開く
+      chooseDetectionPresetForSelectedSegment: () => {
+        const selectedSegment = getSelectedSegment();
+        if (!selectedSegment) return;
+        revealEditedRanges([selectedSegment]);
+        setDetectionDialogSegment(selectedSegment);
+      },
     },
     isEditingLocked,
   );

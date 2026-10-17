@@ -238,9 +238,11 @@ function applyWheelZoomStep(prev: number, deltaY: number, min: number, max: numb
   return Math.min(max, Math.max(min, next));
 }
 
-// 再生中の表示位置の動かし方を、wavesurferのautoScroll/autoCenterに対応づける
+// 再生中の表示位置の動かし方を、wavesurferのautoScroll/autoCenterに対応づける。
+// ページ送りはwavesurferに任せると再生位置が左端ぴったりに来て余白を指定できないため、autoScrollを切って
+// followPlaybackPageで行う(PLAN.md 4章)
 function getPlaybackScrollOptions(mode: PlaybackScrollMode): { autoScroll: boolean; autoCenter: boolean } {
-  return { autoScroll: mode !== "none", autoCenter: mode === "center" };
+  return { autoScroll: mode === "center", autoCenter: mode === "center" };
 }
 
 // 小数の足し引き(例: 1.23 - 0.01 = 1.2199999999999998)で生じる誤差だけを取り除く。
@@ -260,6 +262,14 @@ function getViewRange(wavesurfer: WaveSurfer): TimeRange {
 // 指定の時刻が左端の少し内側に来るよう表示位置を動かす
 function scrollToNearLeftEdge(wavesurfer: WaveSurfer, view: TimeRange, sec: number): void {
   wavesurfer.setScrollTime(Math.max(0, sec - (view.endSec - view.startSec) * SCROLL_MARGIN_RATIO));
+}
+
+// 再生位置(シークを含む)が表示範囲の外に出たら、左端の少し内側に来るよう表示位置を動かす(ページ送り)。
+// wavesurferのautoScroll(renderer.scrollIntoView)と同じ条件で動かし、着地点だけを変える
+function followPlaybackPage(wavesurfer: WaveSurfer, time: number): void {
+  const view = getViewRange(wavesurfer);
+  if (time >= view.startSec && time <= view.endSec) return;
+  scrollToNearLeftEdge(wavesurfer, view, time);
 }
 
 // 区間が表示範囲に収まっていなければ、区間の先頭が左端の少し内側に来るよう表示位置を動かす
@@ -902,7 +912,10 @@ export function useWavesurfer(
     });
     wavesurfer.on("pause", () => setIsPlaying(false));
     wavesurfer.on("finish", () => setIsPlaying(false));
-    wavesurfer.on("timeupdate", (time) => setCurrentTime(time));
+    wavesurfer.on("timeupdate", (time) => {
+      setCurrentTime(time);
+      if (playbackScrollModeRef.current === "page") followPlaybackPage(wavesurfer, time);
+    });
 
     return () => {
       detachMinimapScroll();

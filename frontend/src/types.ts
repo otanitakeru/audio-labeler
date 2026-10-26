@@ -87,7 +87,6 @@ export type VadSettings = {
 // - all: すべての区間。ラベルがある区間も書き直す(モデルを変えてやり直すときなど)
 export type TranscriptionTargetMode = "unlabeled" | "all";
 
-// 文字起こし(Whisper)の設定
 export type TranscriptionSettings = {
   targetMode: TranscriptionTargetMode;
   // Hugging Face のモデルID(例: openai/whisper-large-v3-turbo)
@@ -134,7 +133,6 @@ export type SegmentExportChoices = {
   zeroPadIds: boolean;
 };
 
-// 区間の編集操作に関する設定
 export type EditingSettings = {
   // ショートカットで区間の開始・終了を1回ずらす量(ミリ秒)
   segmentNudgeStepMs: number;

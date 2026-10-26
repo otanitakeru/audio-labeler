@@ -14,7 +14,7 @@ export type SpectrogramRequest =
 
 export type SpectrogramResponse = { type: "chunkDone" } | { type: "done"; data: SpectrogramData };
 
-// 25分の音声で数秒かかるため、計算中も画面の操作を止めないようWeb Workerで動かす
+// 25分・48kHzの音声で十数秒かかるため、計算中も画面の操作を止めないようWeb Workerで動かす
 let computer: SpectrogramComputer | null = null;
 self.addEventListener("message", (e: MessageEvent<SpectrogramRequest>) => {
   const request = e.data;

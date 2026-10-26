@@ -124,7 +124,7 @@ def detect_speech(
 def _merge_close_segments(segments: list[tuple[float, float]], max_gap_sec: float) -> list[tuple[float, float]]:
     """間の無音がmax_gap_secより短い隣り合う区間をつなげる。
     Silero VADのmin_silence_duration_msは前後の余白を足す前の無音で判定するため、余白を足したあとの間隔で
-    まとめたいときに使う(speech-splitter-with-vadのmin_silence_duration_ms_after_vadと同じ処理)"""
+    まとめたいときに使う"""
     merged: list[tuple[float, float]] = []
     for start, end in segments:
         if merged and start - merged[-1][1] < max_gap_sec:

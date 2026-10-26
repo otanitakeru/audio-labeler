@@ -11,8 +11,7 @@ const LAST_USED_PRESET_STORAGE_KEYS: Record<SpeechDetectionTarget, string> = {
   selectedSegment: "audio-labeler.lastUsedSegmentVadPresetId",
 };
 
-// 検出パラメータの初期値は、研究室で使ってきたspeech-splitter-with-vad(config/test/vad.yaml)に合わせる。
-// そこで指定していない項目はSilero VADの既定値
+// 検出パラメータの初期値は、以前から使っていたVADの設定に合わせる。それ以外の項目はSilero VADの既定値
 export const DEFAULT_VAD_PARAMS: VadParams = {
   samplingRate: 16000,
   threshold: 0.25,

@@ -1,0 +1,11 @@
+{
+  "name": "audio-labeler-docs-screenshots",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node capture.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "23.11.1"
+  }
+}

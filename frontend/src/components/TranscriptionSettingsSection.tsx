@@ -15,7 +15,6 @@ type TranscriptionSettingsSectionProps = {
   onChange: (settings: TranscriptionSettings) => void;
 };
 
-// 設定ダイアログの「文字起こし」カテゴリ
 function TranscriptionSettingsSection({ settings, onChange }: TranscriptionSettingsSectionProps) {
   const update = (patch: Partial<TranscriptionSettings>) => onChange({ ...settings, ...patch });
   const error = findTranscriptionSettingsError(settings);

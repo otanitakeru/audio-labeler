@@ -7,8 +7,7 @@ import {
   type ShortcutId,
 } from "../shortcuts/catalog";
 
-// 表示設定(useDisplaySettings)とは異なり、ショートカット割り当てはユーザーが手間をかけて
-// カスタマイズするものなので、リロードしても失われないようlocalStorageへ永続化する
+// ショートカット割り当てはユーザーが手間をかけてカスタマイズするものなので、リロードしても失われないようlocalStorageへ永続化する
 const STORAGE_KEY = "audio-labeler.shortcutBindings";
 
 // 初期値から変更したものだけを保存する。後から初期値を変えたとき、変更していない割り当てにも反映されるようにするため

@@ -23,7 +23,6 @@ const MAX_ZOOM = 5000;
 const DEFAULT_VERTICAL_ZOOM = 0.9;
 const MIN_VERTICAL_ZOOM = 0.9;
 const MAX_VERTICAL_ZOOM = 10;
-// Cmd/Ctrl+スクロール1ステップあたりのズーム倍率
 const WHEEL_ZOOM_FACTOR = 1.1;
 // リサイズ/ドラッグ選択時に区間の長さが0にならないようにする下限(秒)
 const MIN_REGION_LENGTH_SEC = 0.01;
@@ -260,7 +259,6 @@ function getViewRange(wavesurfer: WaveSurfer): TimeRange {
   return { startSec, endSec: startSec + wavesurfer.getWidth() / pxPerSec };
 }
 
-// 指定の時刻が左端の少し内側に来るよう表示位置を動かす
 function scrollToNearLeftEdge(wavesurfer: WaveSurfer, view: TimeRange, sec: number): void {
   wavesurfer.setScrollTime(Math.max(0, sec - (view.endSec - view.startSec) * SCROLL_MARGIN_RATIO));
 }
@@ -639,7 +637,6 @@ type UseWavesurferResult = {
   // スペクトログラムを計算している間(表示したのに、まだ描けていない間)
   isSpectrogramComputing: boolean;
   togglePlay: () => void;
-  // 選択中の区間。なければnull
   getSelectedSegment: () => Segment | null;
   // 変えた区間が1つも見えていなければ、その場所まで表示位置を動かす(再生中は動かさない)
   revealEditedRanges: (ranges: TimeRange[]) => void;
@@ -696,7 +693,7 @@ export function useWavesurfer(
   // 再生の音を通して音量を変えるノード。ブラウザ標準の音量(media.volume)は100%が上限で増幅できないため
   const gainNodeRef = useRef<GainNode | null>(null);
   // 波形上のドラッグ選択で作られる選択範囲。確定済み区間とは別物で、同時に1つだけ。
-  // ラベル入力(startLabelingSelection)や、将来の範囲再生の対象になるため、ラベル入力とは独立した状態として持つ
+  // ラベル入力(startLabelingSelection)のほか、範囲の再生の対象にもなるため、ラベル入力とは独立した状態として持つ
   const selectionRegionRef = useRef<Region | null>(null);
   // 選択範囲にラベル入力中なら、その入力を取り消す(選択範囲自体は残す)関数と、入力欄の要素
   const labelingRef = useRef<{ cancel: () => void; content: HTMLElement } | null>(null);
@@ -754,7 +751,7 @@ export function useWavesurfer(
     deactivate: () => void;
     startEditing: () => void;
   } | null>(null);
-  // 描画済みの区間ごとに、最新の区間データ(出どころによる配色・位置・ラベル)を反映する関数と、
+  // 描画済みの区間ごとに、最新の区間データ(位置・ラベルと、それに応じた配色)を反映する関数と、
   // キーボード操作から選択するための関数
   const segmentControlsRef = useRef(new Map<string, { update: (segment: Segment) => void; activate: () => void }>());
   // キーを押し始めるたびに作り直す。historyGroupKeyは押し続けている間のずらしを履歴上1つの操作にまとめるためのキー、
@@ -1010,7 +1007,7 @@ export function useWavesurfer(
   }, [containerRef]);
 
   // 確定済み区間を波形上に同期表示する(選択範囲は残す)。
-  // 誤操作を防ぐため、確定済み区間は普段は表示のみとし、ラベル帯をクリックしたときだけアクティブ(選択)にして
+  // 誤操作を防ぐため、確定済み区間は普段は表示のみとし、ラベル帯・調整帯をクリックしたときだけアクティブ(選択)にして
   // 調整帯(ラベル帯の下)での移動/幅変更・ショートカットでの削除を有効にする。
   // ラベル文字の編集はさらにダブルクリックかショートカット(初期値: Enter)を押したときだけ。
   // 選択中にそのまま文字編集状態にしないのは、Delete等のキーが「区間の削除」か「文字の削除」か曖昧になるため。

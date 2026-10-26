@@ -9,7 +9,6 @@ from torchaudio.functional import resample
 from app.io.audio_io import AudioFileError, open_audio_file, read_range, to_wav_bytes
 from app.models import ExportSampleFormat, SegmentExportRequest
 
-# 書き出しのサンプル形式から、soundfileのsubtypeへの対応
 _SAMPLE_FORMAT_SUBTYPES: dict[ExportSampleFormat, str] = {
     "pcm16": "PCM_16",
     "pcm24": "PCM_24",

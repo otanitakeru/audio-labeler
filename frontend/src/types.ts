@@ -93,6 +93,8 @@ export type TranscriptionSettings = {
   modelId: string;
   // Whisperの言語コード(例: ja)。nullのときは区間ごとに自動判定する
   language: string | null;
+  // 同じ言葉を出し続ける繰り返し(ハルシネーション)を、バックエンドでやり直して抑えるか
+  suppressRepetition: boolean;
 };
 
 // 音声を読み込んだ後に、続けてどこまで処理するか

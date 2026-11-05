@@ -33,6 +33,7 @@ export async function transcribeRanges(
       channel,
       model_id: settings.modelId.trim(),
       language: settings.language?.trim() ?? null,
+      suppress_repetition: settings.suppressRepetition,
       ranges: ranges.map((r) => ({ start_sec: r.startSec, end_sec: r.endSec })),
     }),
   });

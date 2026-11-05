@@ -20,6 +20,14 @@ _loaded: tuple[str, AutomaticSpeechRecognitionPipeline] | None = None
 # 呼び出し側が途中でやめた(利用者が中止した)ときにロックが残らないよう、ロックは1回の呼び出しの間だけ持つ
 _lock = threading.Lock()
 
+# 同じ語句を出し続ける繰り返し(ハルシネーション)への対策。出力の圧縮率(トークン列をzlibで縮めた比)が閾値を超えたら
+# 結果を捨て、temperatureを上げてサンプリングでやり直す(OpenAI公式実装と同じtemperature fallback)。
+# 閾値はtransformersの推奨値(1.35)より緩くし、出力の上限近くまで続く繰り返しだけを拾う。1.35では同じ文を2回話しただけでも
+# 超え(約1.6)、本当に話した繰り返しが消えるため(同じ文を3回で約2.5、「はい、」を10回で約2.7、上限近くまでの繰り返しは10前後)。
+# 繰り返しを禁じるno_repeat_ngram_size・repetition_penaltyは、本当の繰り返しや、日本語で何度も出る助詞・句読点まで抑えるため使わない
+_FALLBACK_TEMPERATURES = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+_COMPRESSION_RATIO_THRESHOLD = 4.0
+
 
 @dataclass(frozen=True)
 class PreparedAudio:
@@ -56,12 +64,19 @@ def prepare_audio(samples: np.ndarray, sample_rate: int, model_id: str) -> Prepa
     return PreparedAudio(samples=wav.numpy(), sample_rate=model_sample_rate)
 
 
-def transcribe_range(audio: PreparedAudio, r: TranscriptionRange, model_id: str, language: str | None) -> str:
+def transcribe_range(
+    audio: PreparedAudio, r: TranscriptionRange, model_id: str, language: str | None, suppress_repetition: bool
+) -> str:
     """1区間を文字起こしする。languageがNoneのときは区間ごとに言語を自動判定する"""
     clip = audio.samples[int(r.start_sec * audio.sample_rate) : int(r.end_sec * audio.sample_rate)]
     if len(clip) == 0:
         return ""
-    generate_kwargs = {"language": language} if language is not None else {}
+    generate_kwargs: dict[str, object] = {}
+    if suppress_repetition:
+        generate_kwargs["temperature"] = _FALLBACK_TEMPERATURES
+        generate_kwargs["compression_ratio_threshold"] = _COMPRESSION_RATIO_THRESHOLD
+    if language is not None:
+        generate_kwargs["language"] = language
     with _lock:
         asr = _get_pipeline(model_id)
         # Whisperが一度に扱える長さ(30秒)を超える区間は、タイムスタンプを予測させないと書き起こせない(transformersの仕様)。

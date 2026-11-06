@@ -65,6 +65,17 @@ function TranscriptionSettingsSection({ settings, onChange }: TranscriptionSetti
         )}
       </SettingItem>
 
+      <SettingItem
+        title="繰り返し"
+        description="同じ言葉を出し続ける誤りを見つけたら、書き直します。掛け声や歌など、本当に同じ言葉を繰り返す音声ではオフにしてください。"
+      >
+        <Checkbox
+          checked={settings.suppressRepetition}
+          label="同じ言葉の繰り返しを抑える"
+          onChange={(suppressRepetition) => update({ suppressRepetition })}
+        />
+      </SettingItem>
+
       {error && <p className="m-0 text-sm text-red-600">{error}</p>}
 
       <div>

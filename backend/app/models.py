@@ -130,6 +130,8 @@ class TranscribeRequest(BaseModel):
     model_id: str = Field(min_length=1)
     # Whisperの言語コード(例: ja)。Noneのときは区間ごとに自動判定する
     language: str | None = Field(min_length=1)
+    # 同じ語句を出し続ける繰り返しを、temperatureを上げてやり直して抑えるか(services/transcription.py参照)
+    suppress_repetition: bool
     ranges: list[TranscriptionRange]
 
 

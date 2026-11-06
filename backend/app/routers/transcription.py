@@ -38,7 +38,9 @@ def transcribe_segments(upload_id: str, request: TranscribeRequest, http_request
             for index, r in enumerate(request.ranges):
                 if await http_request.is_disconnected():
                     return
-                text = await run_in_threadpool(transcribe_range, audio, r, request.model_id, request.language)
+                text = await run_in_threadpool(
+                    transcribe_range, audio, r, request.model_id, request.language, request.suppress_repetition
+                )
                 yield TranscribedText(index=index, text=text).model_dump_json() + "\n"
         except TranscriptionError as e:
             yield TranscriptionFailure(error=str(e)).model_dump_json() + "\n"

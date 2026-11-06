@@ -9,6 +9,7 @@ export const DEFAULT_TRANSCRIPTION_SETTINGS: TranscriptionSettings = {
   targetMode: "unlabeled",
   modelId: "openai/whisper-large-v3-turbo",
   language: "ja",
+  suppressRepetition: true,
 };
 
 export function findTranscriptionSettingsError(settings: TranscriptionSettings): string | null {

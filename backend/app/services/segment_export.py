@@ -3,8 +3,7 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
-import torch
-from torchaudio.functional import resample
+import soxr
 
 from app.io.audio_io import AudioFileError, open_audio_file, read_range, to_wav_bytes
 from app.models import ExportSampleFormat, SegmentExportRequest
@@ -17,10 +16,8 @@ _SAMPLE_FORMAT_SUBTYPES: dict[ExportSampleFormat, str] = {
 
 
 def _resample(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
-    # torchaudioは(チャンネル数, サンプル数)で受け取るため、向きを入れ替えて渡す。
-    # float64のまま変換し、元が32bitのときに精度を落とさないようにする
-    resampled = resample(torch.from_numpy(np.ascontiguousarray(samples.T)), from_rate, to_rate)
-    return resampled.numpy().T
+    # soxrは(サンプル数, チャンネル数)のまま受け取る。float64のまま変換し、元が32bitのときに精度を落とさないようにする
+    return soxr.resample(samples, from_rate, to_rate)
 
 
 def build_segment_zip(path: Path, request: SegmentExportRequest) -> bytes:

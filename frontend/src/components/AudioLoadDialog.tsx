@@ -7,22 +7,30 @@ import { Radio } from "./SettingFields";
 import VadPresetSelect from "./VadPresetSelect";
 import type { AudioLoadOptions } from "../hooks/useAudioFileOpener";
 import type { AudioUploadProgress } from "../hooks/useAudioSession";
+import { useBackendFeatures } from "../hooks/useBackendFeatures";
 import { readLabelFile } from "../hooks/useLabelFile";
 import { useLastAudioLoadChoices } from "../hooks/useLastAudioLoadChoices";
 import { useVadSettings } from "../hooks/useVadSettings";
 import type { LabeledRange } from "../formats/labelFormat";
-import type { AfterLoadProcessing, AudioFileInfo } from "../types";
+import type { AfterLoadProcessing, AudioFileInfo, BackendFeatures } from "../types";
 
-const AFTER_LOAD_PROCESSING_OPTIONS: { value: AfterLoadProcessing; label: string }[] = [
-  { value: "none", label: "しない" },
-  { value: "speechDetection", label: "自動検出まで" },
-  { value: "transcription", label: "文字起こしまで" },
+type AfterLoadProcessingOption = {
+  value: AfterLoadProcessing;
+  label: string;
+  // バックエンドにすべてそろっているときだけ出す(PLAN.md 6章)
+  requiredFeatures: (keyof BackendFeatures)[];
+};
+
+const AFTER_LOAD_PROCESSING_OPTIONS: AfterLoadProcessingOption[] = [
+  { value: "none", label: "しない", requiredFeatures: [] },
+  { value: "speechDetection", label: "自動検出まで", requiredFeatures: ["speechDetection"] },
+  { value: "transcription", label: "文字起こしまで", requiredFeatures: ["speechDetection", "transcription"] },
 ];
 
 // ラベルファイルを選んだときは自動検出しない(PLAN.md 4章-1)。文字起こしは自動検出を挟まないため「まで」を付けない
-const AFTER_LOAD_PROCESSING_OPTIONS_WITH_LABELS: { value: AfterLoadProcessing; label: string }[] = [
-  { value: "none", label: "しない" },
-  { value: "transcription", label: "文字起こし" },
+const AFTER_LOAD_PROCESSING_OPTIONS_WITH_LABELS: AfterLoadProcessingOption[] = [
+  { value: "none", label: "しない", requiredFeatures: [] },
+  { value: "transcription", label: "文字起こし", requiredFeatures: ["transcription"] },
 ];
 
 type LabelFileSelection = { filename: string; ranges: LabeledRange[] | null; error: string | null };
@@ -50,9 +58,14 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
     formRef.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
   }, []);
 
+  const features = useBackendFeatures();
   const hasLabels = labelFile !== null;
-  // ラベルファイルを外したときに元の選択へ戻せるよう、選択そのものは書き換えずに表示と読み込みだけ読み替える
-  const effectiveProcessing = hasLabels && processing === "speechDetection" ? "none" : processing;
+  const processingOptions = (
+    hasLabels ? AFTER_LOAD_PROCESSING_OPTIONS_WITH_LABELS : AFTER_LOAD_PROCESSING_OPTIONS
+  ).filter((option) => option.requiredFeatures.every((feature) => features[feature]));
+  // ラベルファイルを外したときや、バックエンドを full に戻したときに元の選択へ戻せるよう、
+  // 選択そのものは書き換えずに表示と読み込みだけ読み替える
+  const effectiveProcessing = processingOptions.some((option) => option.value === processing) ? processing : "none";
   // ラベルファイルを選んだときの文字起こしは、自動検出を挟まない
   const runsSpeechDetection = !hasLabels && effectiveProcessing !== "none";
   const channelOutOfRange = channel >= info.channelCount;
@@ -138,18 +151,21 @@ function AudioLoadForm({ info, onLoad, onCancel }: AudioLoadFormProps) {
         {labelFile?.error && <p className="m-0 text-sm text-red-600">{labelFile.error}</p>}
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="font-semibold text-gray-900">読み込み後の処理</div>
-        {(hasLabels ? AFTER_LOAD_PROCESSING_OPTIONS_WITH_LABELS : AFTER_LOAD_PROCESSING_OPTIONS).map((option) => (
-          <Radio
-            key={option.value}
-            name="afterLoadProcessing"
-            checked={effectiveProcessing === option.value}
-            label={option.label}
-            onSelect={() => setProcessing(option.value)}
-          />
-        ))}
-      </div>
+      {/* 「しない」しか選べないときは、選ぶ余地がないため出さない */}
+      {processingOptions.length > 1 && (
+        <div className="flex flex-col gap-2">
+          <div className="font-semibold text-gray-900">読み込み後の処理</div>
+          {processingOptions.map((option) => (
+            <Radio
+              key={option.value}
+              name="afterLoadProcessing"
+              checked={effectiveProcessing === option.value}
+              label={option.label}
+              onSelect={() => setProcessing(option.value)}
+            />
+          ))}
+        </div>
+      )}
 
       {runsSpeechDetection && (
         <div className="flex flex-col gap-2">

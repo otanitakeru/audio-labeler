@@ -9,6 +9,12 @@ export type AudioFileInfo = {
   isFloat: boolean;
 };
 
+// バックエンドで使える機能。バックエンドのビルドの種類(base / full)で変わる(PLAN.md 6章)
+export type BackendFeatures = {
+  speechDetection: boolean;
+  transcription: boolean;
+};
+
 export type Segment = {
   id: string;
   startSec: number;

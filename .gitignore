@@ -4,6 +4,9 @@
 # 動作確認用の音声データ(リポジトリには含めない)
 mock-data/
 
+# start.sh で選んだバックエンドのビルドの種類(個人の選択)
+.env
+
 # Claude Codeのローカル設定(個人環境依存)
 .claude/settings.local.json
 

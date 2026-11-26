@@ -10,6 +10,7 @@ import SpeechDetectionDialog from "../components/SpeechDetectionDialog";
 import TransportControls from "../components/TransportControls";
 import Waveform from "../components/Waveform";
 import { useAudioSession } from "../hooks/useAudioSession";
+import { useBackendFeatures } from "../hooks/useBackendFeatures";
 import { useDisplaySettings } from "../hooks/useDisplaySettings";
 import { useEditingSettings } from "../hooks/useEditingSettings";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
@@ -36,6 +37,7 @@ function EditScreen() {
     error: uploadError,
     clearError: clearUploadError,
   } = useAudioSession();
+  const features = useBackendFeatures();
   const navigate = useNavigate();
   const waveformContainerRef = useRef<HTMLDivElement>(null);
   const amplitudeAxisRef = useRef<HTMLDivElement>(null);
@@ -193,22 +195,25 @@ function EditScreen() {
       nudgeSegmentStartRight: (e) => nudgeSelectedSegment("start", "right", e.repeat),
       nudgeSegmentEndLeft: (e) => nudgeSelectedSegment("end", "left", e.repeat),
       nudgeSegmentEndRight: (e) => nudgeSelectedSegment("end", "right", e.repeat),
-      // 区間を選んで続けて検出し直せるよう、ダイアログは出さず「選んだ区間」で前回使ったプリセットで実行する。
-      // 選択中の区間がなくてもfalseを返さない(⌘ + D がブラウザの「ブックマークに追加」にならないように)
-      detectSpeechInSelectedSegment: () => {
-        const selectedSegment = getSelectedSegment();
-        if (!selectedSegment) return;
-        stopPlayback();
-        revealEditedRanges([selectedSegment]);
-        requestDetection(lastUsedPresets.selectedSegment.id, selectedSegment);
-      },
-      // プリセットを変えて検出し直すとき用に、選んだ区間で「自動検出」ボタンを押したときと同じダイアログを開く
-      chooseDetectionPresetForSelectedSegment: () => {
-        const selectedSegment = getSelectedSegment();
-        if (!selectedSegment) return;
-        revealEditedRanges([selectedSegment]);
-        setDetectionDialogSegment(selectedSegment);
-      },
+      // 自動検出がバックエンドにないときは登録しない(キーはブラウザ標準の動作のままにする)
+      ...(features.speechDetection && {
+        // 区間を選んで続けて検出し直せるよう、ダイアログは出さず「選んだ区間」で前回使ったプリセットで実行する。
+        // 選択中の区間がなくてもfalseを返さない(⌘ + D がブラウザの「ブックマークに追加」にならないように)
+        detectSpeechInSelectedSegment: () => {
+          const selectedSegment = getSelectedSegment();
+          if (!selectedSegment) return;
+          stopPlayback();
+          revealEditedRanges([selectedSegment]);
+          requestDetection(lastUsedPresets.selectedSegment.id, selectedSegment);
+        },
+        // プリセットを変えて検出し直すとき用に、選んだ区間で「自動検出」ボタンを押したときと同じダイアログを開く
+        chooseDetectionPresetForSelectedSegment: () => {
+          const selectedSegment = getSelectedSegment();
+          if (!selectedSegment) return;
+          revealEditedRanges([selectedSegment]);
+          setDetectionDialogSegment(selectedSegment);
+        },
+      }),
     },
     isEditingLocked,
   );
@@ -235,8 +240,9 @@ function EditScreen() {
           volume={playbackSettings.volume}
           onVolumeChange={setVolume}
         />
+        {/* 自動検出・文字起こしは、バックエンドに入っているときだけ出す(PLAN.md 6章) */}
         <div className="flex items-center gap-3">
-          {detectionProgress ? (
+          {!features.speechDetection ? null : detectionProgress ? (
             <ProgressButton
               label={detectionProgress.phase === "preparing" ? "前処理中" : "処理中"}
               hoverLabel="中止"
@@ -252,7 +258,7 @@ function EditScreen() {
               自動検出
             </Button>
           )}
-          {transcriptionProgress ? (
+          {!features.transcription ? null : transcriptionProgress ? (
             <ProgressButton
               label={transcriptionProgress.phase === "loadingModel" ? "モデル読み込み中" : "処理中"}
               hoverLabel="中止"

@@ -1,11 +1,8 @@
-# PyTorchはGPU版(数GB)ではなくCPU版を入れる
---extra-index-url https://download.pytorch.org/whl/cpu
+# どちらのビルド(base / full)でも入れる依存。自動検出・文字起こし用は requirements-ml.txt
 fastapi
 uvicorn[standard]
 numpy
 soundfile
 python-multipart
-torch
-torchaudio
-silero-vad
-transformers
+# 音声の切り出しのサンプリング周波数の変換(SoXの変換エンジン)。torchaudioはfullにしか入らないため使わない
+soxr

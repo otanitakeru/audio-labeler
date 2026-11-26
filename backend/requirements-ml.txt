@@ -1,0 +1,6 @@
+# 自動検出(Silero VAD)・文字起こし(Whisper)用の依存。full のビルドだけで入れる(PLAN.md 6章)
+# PyTorchはGPU版(数GB)ではなくCPU版を入れる。CPU版の配布元は Dockerfile の --torch-backend cpu で指定する
+torch
+torchaudio
+silero-vad
+transformers

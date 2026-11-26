@@ -1,6 +1,9 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      # base(自動検出・文字起こしなし)か full か。start.sh が .env に残した値を使う(PLAN.md 6章)
+      target: ${BACKEND_TARGET:-full}
     ports:
       - "8000:8000"
     volumes:

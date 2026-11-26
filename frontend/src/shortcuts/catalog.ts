@@ -2,6 +2,8 @@
 // ここにIDと表示名・グループ・初期割り当てだけを追加すれば、設定ダイアログの一覧・カスタマイズUIに自動で反映される。
 // 実際の挙動(ハンドラ)は各画面がuseKeyboardShortcutsで個別に登録する。
 
+import type { BackendFeatures } from "../types";
+
 export type ShortcutId =
   | "togglePlay"
   | "labelSelection"
@@ -38,6 +40,8 @@ export type ShortcutDef = {
   label: string;
   group: ShortcutGroup;
   defaultCombo: KeyCombo;
+  // バックエンドにこの機能がないときは、設定ダイアログの一覧に出さない(PLAN.md 6章)
+  requiredFeature?: keyof BackendFeatures;
 };
 
 function combo(key: string, modifiers: Partial<Omit<KeyCombo, "key">> = {}): KeyCombo {
@@ -115,6 +119,7 @@ export const SHORTCUT_CATALOG: ShortcutDef[] = [
     label: "選択中の区間を自動検出",
     group: "区間の調整",
     defaultCombo: combo("d", PRIMARY_MODIFIER),
+    requiredFeature: "speechDetection",
   },
   // ⌘ + Shift + D / Ctrl + Shift + D はブラウザでは「すべてのタブをブックマークに追加」だが、上と同じくキーを素通ししないため使える
   {
@@ -122,6 +127,7 @@ export const SHORTCUT_CATALOG: ShortcutDef[] = [
     label: "プリセットを選んで自動検出",
     group: "区間の調整",
     defaultCombo: combo("d", { ...PRIMARY_MODIFIER, shift: true }),
+    requiredFeature: "speechDetection",
   },
 ];
 

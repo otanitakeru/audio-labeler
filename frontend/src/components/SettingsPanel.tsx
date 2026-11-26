@@ -23,11 +23,12 @@ import {
   MIN_SEGMENT_NUDGE_STEP_MS,
   useEditingSettings,
 } from "../hooks/useEditingSettings";
+import { useBackendFeatures } from "../hooks/useBackendFeatures";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import { findTranscriptionSettingsError, useTranscriptionSettings } from "../hooks/useTranscriptionSettings";
 import { findVadSettingsError, useVadSettings } from "../hooks/useVadSettings";
 import { SHORTCUT_CATALOG, SHORTCUT_GROUPS } from "../shortcuts/catalog";
-import type { PlaybackScrollMode, SpectrogramColorMap } from "../types";
+import type { BackendFeatures, PlaybackScrollMode, SpectrogramColorMap } from "../types";
 
 const PLAYBACK_SCROLL_MODE_OPTIONS: { value: PlaybackScrollMode; label: string }[] = [
   { value: "page", label: "端に来たらページ送り" },
@@ -43,6 +44,12 @@ const SPECTROGRAM_COLOR_MAP_OPTIONS: { value: SpectrogramColorMap; label: string
 
 const CATEGORIES = ["表示設定", "編集", "自動検出", "文字起こし", "ショートカットキー"] as const;
 type Category = (typeof CATEGORIES)[number];
+
+// バックエンドにその機能がないときは出さないカテゴリ(PLAN.md 6章)
+const CATEGORY_REQUIRED_FEATURES: Partial<Record<Category, keyof BackendFeatures>> = {
+  自動検出: "speechDetection",
+  文字起こし: "transcription",
+};
 
 type HeightSettingProps = {
   title: string;
@@ -114,8 +121,16 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [draftEditingSettings, setDraftEditingSettings] = useState(editingSettings);
   const [draftTranscriptionSettings, setDraftTranscriptionSettings] = useState(transcriptionSettings);
 
-  const vadSettingsError = findVadSettingsError(draftVadSettings);
-  const transcriptionSettingsError = findTranscriptionSettingsError(draftTranscriptionSettings);
+  const features = useBackendFeatures();
+  const visibleCategories = CATEGORIES.filter((c) => {
+    const requiredFeature = CATEGORY_REQUIRED_FEATURES[c];
+    return !requiredFeature || features[requiredFeature];
+  });
+  // 出していないカテゴリの誤りでOKが押せなくなると直しようがないため、出しているカテゴリだけ確かめる
+  const vadSettingsError = features.speechDetection ? findVadSettingsError(draftVadSettings) : null;
+  const transcriptionSettingsError = features.transcription
+    ? findTranscriptionSettingsError(draftTranscriptionSettings)
+    : null;
   // 別のカテゴリを開いていてもOKが押せない理由が分かるよう、下のボタンの横にも出す
   const settingsError = vadSettingsError
     ? `自動検出: ${vadSettingsError}`
@@ -141,7 +156,7 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
       <div className="flex min-h-0 flex-1 gap-8">
         <nav className="w-48 shrink-0 border-r border-gray-300 pr-4">
           <ul className="flex flex-col gap-1">
-            {CATEGORIES.map((c) => (
+            {visibleCategories.map((c) => (
               <li key={c}>
                 <button
                   type="button"
@@ -299,7 +314,9 @@ function SettingsPanel({ onClose }: SettingsPanelProps) {
             {SHORTCUT_GROUPS.map((group) => (
               <div key={group} className="flex flex-col gap-3">
                 <div className="font-semibold text-gray-900">{group}</div>
-                {SHORTCUT_CATALOG.filter((def) => def.group === group).map((def) => (
+                {SHORTCUT_CATALOG.filter(
+                  (def) => def.group === group && (!def.requiredFeature || features[def.requiredFeature]),
+                ).map((def) => (
                   <ShortcutBindingRow
                     key={def.id}
                     def={def}

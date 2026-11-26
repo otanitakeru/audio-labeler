@@ -147,7 +147,7 @@ start_sec\tend_sec\tlabel
 
 ### VAD(実装済み)
 
-- Silero VAD(公式の `silero-vad` パッケージ + CPU版PyTorch)をバックエンドで実行する。公式実装をそのまま使い、区切り方などを自前で書かないため。代わりにバックエンドのDockerイメージは大きくなる(約1.4GB)
+- Silero VAD(公式の `silero-vad` パッケージ + CPU版PyTorch)をバックエンドで実行する。公式実装をそのまま使い、区切り方などを自前で書かないため。代わりにバックエンドのDockerイメージは大きくなる(約1.75GB。使わない人は入れずにビルドできる。6章参照)
 - 編集画面の「自動検出」ボタン、または読み込みのダイアログ(4章-1)で実行し、検出した区間はラベルが空の区間として追加する
 - 実行するときに、検出パラメータのプリセット(下の設定参照)を名前で選ぶ。音声の性質(収録環境・話者など)に合わせて、厳しめ・大まかめなどの組を切り替えて使うため
   - 「自動検出」ボタンを押すと、プリセットを選ぶダイアログを出す(初期値は前回使ったプリセット。変えなければEnterで実行)。編集画面に選択欄を常に出すより項目を増やさずに済み、読み込みのダイアログとも選び方が揃うため。後から実行の対象(確認済みの区間だけなど)を選べるようにするときも、このダイアログに足す
@@ -321,7 +321,7 @@ start_sec\tend_sec\tlabel
 - 書き出しのダイアログの項目
   - 対象: 「すべての区間」/「ラベルがある区間のみ」
   - チャンネル: 「読み込んだチャンネル」/ 各チャンネル /「すべてのチャンネル」(多チャンネルのまま書き出す)。2ch以上の音声のときだけ出す
-  - サンプリング周波数: 「元のまま」/ 元より低い一般的な値(48000・44100・22050・16000・8000Hzのうち元より低いもの)。元より高くしても音質は上がらないため選べないようにする。変換は torchaudio で行う(VADで入っているので依存は増えない)
+  - サンプリング周波数: 「元のまま」/ 元より低い一般的な値(48000・44100・22050・16000・8000Hzのうち元より低いもの)。元より高くしても音質は上がらないため選べないようにする。変換は soxr(SoXの変換エンジン libsoxr のPythonバインディング)で行う。torchaudio は自動検出・文字起こしを入れないビルド(6章)にはないため。librosa の変換も中身は soxr だが、scipy・numba などが一緒に入り数百MB増えるため直接使う
   - ビット深度: 「元のまま」/ 16bit / 24bit / 32bit float
   - ラベルも保存: オン / オフ(text.txt を入れるか)
   - 区切り: タブ / 半角スペース(segment.txt・text.txt の列の区切り)
@@ -335,6 +335,23 @@ start_sec\tend_sec\tlabel
 ## 6. 非機能要件
 
 - **Docker化**: docker-compose でフロント/バックエンドを起動
+  - バックエンドのイメージは2種類から選んでビルドする。自動検出・文字起こしを使わない人に、PyTorch など重い依存(イメージの大半)をインストールさせないため
+    - `full`(既定): 自動検出・文字起こしまで使える。`requirements.txt` と `requirements-ml.txt`(torch・silero-vad・transformers)を入れる
+    - `base`: 自動検出・文字起こしなし。`requirements.txt` だけを入れる
+    - Dockerfile は multi-stage にし、`full` は `base` と同じ依存の段階の上に積む。共通部分のキャッシュを使い、後から `full` に切り替えても追加分だけをインストールするため。アプリのコードは依存をインストールした後にコピーし、コードを変えても依存を入れ直さないようにする
+    - どちらにするかは `./build.sh --base` / `--full` で選び、`.env` の `BACKEND_TARGET` に残す(compose の `build.target` が読む)。次に引数なしで作り直したときに既定へ戻り、使わない人に重いインストールが走らないようにするため。独自の設定ファイルにしないのは、compose が `.env` を自動で読み、手で `docker compose` を打っても同じ種類になるため
+    - 途中で切り替えるときは、もう一方を指定して作り直す。バックエンドが再起動するので、アップロードした音声は消える(ラベルは書き出してから切り替える)。設定はブラウザのlocalStorageにあるので残る
+  - 作ることと起動・停止を、スクリプトで分ける。種類を選ぶのは作るときだけで、毎日の起動では気にしなくて済むようにするため
+    - `build.sh`: イメージを作り、コンテナを作り直して起動する。種類を選ぶのはここだけ
+    - `start.sh`: 作ってあるコンテナをそのまま起動する(`docker compose up -d`)。Docker Desktop の再生ボタンと同じ結果にし、どちらで起動しても挙動が変わらないようにするため。まだ何もないときだけ、`.env` の種類で作ってから起動する
+    - `stop.sh`: コンテナを消さずに止める(`docker compose stop`)。止めたあとも Docker Desktop の再生ボタンで起動できるようにするため
+    - 代わりに、`git pull` で依存(requirements・package.json)や Dockerfile が変わったときは、利用者が `build.sh` を打つ必要がある(`start.sh` は作り直さないため)。Docker Desktop の再生ボタンと挙動を揃えることを優先した
+    - コンテナを消さないため、作り直したコンテナにも前のフロントの `node_modules`(無名ボリューム)が引き継がれる。`build.sh` では `--renew-anon-volumes` で作り直し、package.json の変更が反映されないままにならないようにする
+  - フロントのイメージは分けない。画面に何を出すかは、バックエンドが返す「使える機能」(`GET /api/features`)で決める
+    - バックエンドは、自動検出・文字起こしに要るパッケージが入っているか(`importlib.util.find_spec`)で判断し、入っていない機能のルーターは登録しない。設定ファイルに書いた値ではなく実際に入っているものを返し、ビルドのし直し忘れなどでフロントと食い違わないようにするため。import の失敗を握りつぶす判定にしないのは、`full` でコードの誤りによる ImportError が「機能なし」に見えてしまうため
+    - フロントは使えない機能のボタン・設定のカテゴリ・読み込み後の処理の選択肢・ショートカットキーを出さない。押してからエラーにするより、最初から出さない方がUIの最小主義に合うため
+    - 問い合わせに答えが返るまで(バックエンドがまだ起動していないときなど)は、使えないものとして扱い、数秒ごとに問い合わせ直す。使えないボタンを出すより、少し遅れて出る方が安全なため
+  - pip ではなく uv でインストールする。キャッシュなしのビルドが約2倍速くなったため(この環境で pip 82〜107秒、uv 46〜51秒)。PyTorch は `--torch-backend cpu` でCPU版の配布元から取る(`--extra-index-url` にすると、numpy などもそちらの古い版を取るおそれがあるため)。起動のたびにバイトコードを作り直さないよう、`--compile-bytecode` を付ける
 - **動作環境**: ブラウザベースUIを想定
 
 ## 7. 設計方針
@@ -397,7 +414,7 @@ start_sec\tend_sec\tlabel
 audio-labeler/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py            # FastAPI エントリポイント
+│   │   ├── main.py            # FastAPI エントリポイント。使える機能(6章)を返し、使えない機能のルーターは登録しない
 │   │   ├── routers/
 │   │   │   ├── audio.py       # 音声ファイルのアップロード・チャンネル抽出・削除
 │   │   │   ├── vad.py         # 発話区間の自動検出
@@ -411,8 +428,9 @@ audio-labeler/
 │   │       ├── vad.py         # Silero VADの実行
 │   │       ├── transcription.py  # Whisper(transformers)の実行
 │   │       └── segment_export.py  # 区間ごとの切り出し・リサンプリング・ビット深度の変換とZIPの作成
-│   ├── requirements.txt
-│   └── Dockerfile
+│   ├── requirements.txt       # どちらのビルドでも入れる依存
+│   ├── requirements-ml.txt    # 自動検出・文字起こし用の依存(full のビルドだけ。6章参照)
+│   └── Dockerfile             # base / full の2つのターゲット
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx
@@ -450,12 +468,14 @@ audio-labeler/
 │   │   │   ├── useVadSettings.tsx # 自動検出の設定(既にある区間の扱い・プリセット)と前回使ったプリセット(音声全体・選んだ区間で別々。localStorageに保存)
 │   │   │   ├── useTranscription.tsx  # 文字起こし(Whisper)の実行・中止と進捗(Context。実行中はヘッダーの操作も止めるため)、結果のラベルへの反映
 │   │   │   ├── useTranscriptionSettings.tsx  # 文字起こしの設定(localStorageに保存)
+│   │   │   ├── useBackendFeatures.tsx  # バックエンドで使える機能(自動検出・文字起こし)を問い合わせて持つ(Context。6章参照)
 │   │   │   ├── useEditingSettings.tsx # 区間の編集操作の設定(境界をずらす量など。localStorageに保存)
 │   │   │   ├── useDisplaySettings.tsx # 設定ダイアログの「表示設定」(波形・スペクトログラムの縦幅など。localStorageに保存)
 │   │   │   ├── useViewOptions.tsx # ヘッダーの「表示」メニューで切り替える表示のオン/オフ(localStorageに保存)
 │   │   │   └── usePlaybackSettings.ts  # 再生の速さ・音量(localStorageに保存)
 │   │   ├── api/
 │   │   │   ├── audioApi.ts        # 音声のアップロード・取得・削除
+│   │   │   ├── featuresApi.ts     # 使える機能の問い合わせ
 │   │   │   ├── vadApi.ts          # 自動検出の呼び出し
 │   │   │   ├── transcriptionApi.ts  # 文字起こしの呼び出し
 │   │   │   └── segmentExportApi.ts  # 音声の切り出しの呼び出し
@@ -474,7 +494,10 @@ audio-labeler/
 │   │   └── types.ts               # Segment 型定義
 │   ├── package.json
 │   └── Dockerfile
-├── docker-compose.yml
+├── docker-compose.yml         # バックエンドのビルドターゲットは .env の BACKEND_TARGET で選ぶ
+├── build.sh                   # イメージを作り、コンテナを作り直して起動(--base / --full でビルドの種類を選ぶ)
+├── start.sh                   # 作ってあるコンテナの起動(Docker Desktop の再生ボタンと同じ)
+├── stop.sh                    # コンテナを消さずに停止
 └── PLAN.md
 ```
 

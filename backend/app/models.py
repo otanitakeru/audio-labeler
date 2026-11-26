@@ -3,6 +3,13 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
+class BackendFeatures(BaseModel):
+    """このバックエンドで使える機能。ビルドの種類(base / full)で変わる(PLAN.md 6章)"""
+
+    speech_detection: bool
+    transcription: bool
+
+
 class UploadedAudioInfo(BaseModel):
     upload_id: str
     filename: str

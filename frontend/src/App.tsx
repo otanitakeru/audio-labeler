@@ -7,6 +7,7 @@ import Dialog from "./components/Dialog";
 import SettingsPanel from "./components/SettingsPanel";
 import { AudioFileOpenerProvider, useAudioFileOpener } from "./hooks/useAudioFileOpener";
 import { AudioSessionProvider, useAudioSession } from "./hooks/useAudioSession";
+import { BackendFeaturesProvider } from "./hooks/useBackendFeatures";
 import { DisplaySettingsProvider } from "./hooks/useDisplaySettings";
 import { EditingSettingsProvider } from "./hooks/useEditingSettings";
 import { SegmentsProvider } from "./hooks/useSegments";
@@ -71,31 +72,33 @@ function AppLayout() {
 
 function App() {
   return (
-    <AudioSessionProvider>
-      <SegmentsProvider>
-        <DisplaySettingsProvider>
-          <ViewOptionsProvider>
-            <ShortcutBindingsProvider>
-              <VadSettingsProvider>
-                <SpeechDetectionProvider>
-                  <TranscriptionSettingsProvider>
-                    <TranscriptionProvider>
-                      <EditingSettingsProvider>
-                        <AudioFileOpenerProvider>
-                          <Router>
-                            <AppLayout />
-                          </Router>
-                        </AudioFileOpenerProvider>
-                      </EditingSettingsProvider>
-                    </TranscriptionProvider>
-                  </TranscriptionSettingsProvider>
-                </SpeechDetectionProvider>
-              </VadSettingsProvider>
-            </ShortcutBindingsProvider>
-          </ViewOptionsProvider>
-        </DisplaySettingsProvider>
-      </SegmentsProvider>
-    </AudioSessionProvider>
+    <BackendFeaturesProvider>
+      <AudioSessionProvider>
+        <SegmentsProvider>
+          <DisplaySettingsProvider>
+            <ViewOptionsProvider>
+              <ShortcutBindingsProvider>
+                <VadSettingsProvider>
+                  <SpeechDetectionProvider>
+                    <TranscriptionSettingsProvider>
+                      <TranscriptionProvider>
+                        <EditingSettingsProvider>
+                          <AudioFileOpenerProvider>
+                            <Router>
+                              <AppLayout />
+                            </Router>
+                          </AudioFileOpenerProvider>
+                        </EditingSettingsProvider>
+                      </TranscriptionProvider>
+                    </TranscriptionSettingsProvider>
+                  </SpeechDetectionProvider>
+                </VadSettingsProvider>
+              </ShortcutBindingsProvider>
+            </ViewOptionsProvider>
+          </DisplaySettingsProvider>
+        </SegmentsProvider>
+      </AudioSessionProvider>
+    </BackendFeaturesProvider>
   );
 }
 

@@ -50,6 +50,39 @@
 > [!NOTE]
 > `--full` で文字起こしを初めて使うときは、Whisper のモデル(1GB 以上)をダウンロードするため数分かかります。モデルは Docker ボリュームに残るので、2回目以降はダウンロードしません。
 
+NVIDIA GPU があれば、`--full` の代わりに `--gpu` で作ると、文字起こしを GPU で動かせます。準備が要るので、[NVIDIA GPU で動かす](#nvidia-gpu-で動かす) を読んでから選んでください。
+
+### NVIDIA GPU で動かす
+
+`--gpu` で作ると、文字起こし(Whisper)が NVIDIA GPU で動きます。使える機能は `--full` と同じです。`--full` では CPU で動くため、文字起こしに1区間あたり十数秒かかります。
+
+```bash
+./build.sh --gpu
+```
+
+使えるのは Linux だけです(Windows と Mac では使えません)。先に NVIDIA ドライバーと [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) を入れてください。NVIDIA Container Toolkit がないとバックエンドが起動しないので、そのときは `./build.sh --full` で作り直してください。
+
+PyTorch の CUDA 版はホストの NVIDIA ドライバーに合わせて自動で選びます。イメージは約 6GB で、`--full` より 4GB ほど大きくなります(入る版で変わります)。自動検出(Silero VAD)は CPU でも十分に速いため、`--gpu` でも CPU で動きます。
+
+GPU を使えるかは `./build.sh` の最後に表示されます。
+
+```text
+  文字起こし: GPU で動きます(PyTorch: CUDA 13.2 版)
+```
+
+「GPU を使えないため、CPU で動きます」と出たときも、アプリは使えます。GPU で動かしたいときは、表示の括弧の中を見てください。
+
+- 「CPU 版」のとき: NVIDIA ドライバーを見つけられず、CPU 版の PyTorch が入りました。ドライバーが入っているかを確かめてください
+- 「CUDA 〇〇 版」のとき: 入った PyTorch の CUDA 版にドライバーが対応していません。ドライバーを更新して `./build.sh` で作り直すか、版を自分で指定します
+
+版を自分で指定するときは、`nvidia-smi` に出る「CUDA Version」以下の版を、`.env` に `TORCH_BACKEND=cu126`(CUDA 12.6 のとき)のように書きます。そのあと `./build.sh` で作り直します。指定した CUDA 版によっては、入る PyTorch が少し古くなります。
+
+```bash
+./build.sh
+```
+
+ドライバーを更新したあとも `./build.sh` で作り直してください。PyTorch の版を選び直します。
+
 ### 2回目からの起動と停止
 
 選んだ種類は `.env` に記録されるので、次からは種類を指定しません。
@@ -77,7 +110,7 @@
 ./build.sh --full
 ```
 
-`--full` から `--base` に戻すときは `--base` を付けて作り直します。
+ほかの種類に変えるときも、変えたい種類(`--base`・`--full`・`--gpu`)を付けて作り直します。
 
 作り直すと、読み込んでいた音声は消えます。ラベルを書き出してから作り直し、終わったらブラウザを再読み込みしてください。設定はブラウザに保存されているので残ります。
 

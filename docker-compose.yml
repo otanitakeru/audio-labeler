@@ -2,7 +2,8 @@ services:
   backend:
     build:
       context: ./backend
-      # base(自動検出・文字起こしなし)か full か。start.sh が .env に残した値を使う(PLAN.md 6章)
+      # base(自動検出・文字起こしなし)・full・gpu のどれか。build.sh が .env に残した値を使う(PLAN.md 6章)。
+      # gpu のときは build.sh が docker-compose.gpu.yml も重ねる
       target: ${BACKEND_TARGET:-full}
     ports:
       - "8000:8000"

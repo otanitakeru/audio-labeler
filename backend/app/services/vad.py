@@ -18,7 +18,8 @@ class SpeechDetectionCancelled(Exception):
 
 
 def _get_model():
-    # 読み込みに数秒かかるため、最初に使うときに一度だけ読み込む
+    # 読み込みに数秒かかるため、最初に使うときに一度だけ読み込む。
+    # GPU を使えるときも CPU で動かす(小さなモデルで窓を1つずつ判定するため、GPU とのやりとりの方が重い。PLAN.md 6章)
     global _model
     if _model is None:
         _model = load_silero_vad()

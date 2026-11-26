@@ -1,0 +1,18 @@
+# gpu のときだけ docker-compose.yml に重ね、NVIDIA GPU をバックエンドに渡す(PLAN.md 6章)。
+# build.sh --gpu が .env の COMPOSE_FILE に書くので、手で指定しなくてよい。
+# NVIDIA のランタイムがない環境ではコンテナが起動しなくなるため、docker-compose.yml には書かない
+services:
+  backend:
+    build:
+      args:
+        # PyTorch の CUDA 版。auto はホストのドライバーに合わせて uv が選ぶ。外れたときは .env に TORCH_BACKEND=cu126 などと書く
+        TORCH_BACKEND: ${TORCH_BACKEND:-auto}
+        # ドライバーを更新したら PyTorch を選び直させるため、build.sh がホストのドライバーの版を渡す
+        NVIDIA_DRIVER_VERSION: ${NVIDIA_DRIVER_VERSION:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -207,7 +207,7 @@ start_sec\tend_sec\tlabel
 ### Whisper(実装済み)
 
 - 区間はVADや手動で作り、Whisperは各区間の文言(ラベル)だけを埋める。区切りの精度はVADの方が高いため、Whisperのタイムスタンプで区間は作らない
-- Hugging Face の `transformers`(`pipeline("automatic-speech-recognition")`)でバックエンドで実行する。モデルIDを変えるだけで、OpenAI公式・kotoba-whisper・独自にfine-tuneしたモデルなどに差し替えられるようにするため。PyTorchはVADで入っているので追加の依存は少ない。代わりにCPUのfp32で動くため、faster-whisper(int8)より遅い
+- Hugging Face の `transformers`(`pipeline("automatic-speech-recognition")`)でバックエンドで実行する。モデルIDを変えるだけで、OpenAI公式・kotoba-whisper・独自にfine-tuneしたモデルなどに差し替えられるようにするため。PyTorchはVADで入っているので追加の依存は少ない。代わりにCPUのfp32で動くため、faster-whisper(int8)より遅い(NVIDIA GPU があれば `gpu` のビルドで GPU の fp16 で動かせる。6章)
   - モデルは初めて使うときにダウンロードし、Dockerのボリューム(`hf-cache`)に残す。イメージを作り直しても再ダウンロードしないようにするため
   - メモリに置くモデルは1つだけ(別のモデルIDが指定されたら入れ替える)
 - 編集画面の「文字起こし」ボタン、または読み込みのダイアログ(4章-1)で実行する。対象は設定で選ぶ(読み込みのダイアログでラベルファイルを選んだときを除く)
@@ -335,12 +335,25 @@ start_sec\tend_sec\tlabel
 ## 6. 非機能要件
 
 - **Docker化**: docker-compose でフロント/バックエンドを起動
-  - バックエンドのイメージは2種類から選んでビルドする。自動検出・文字起こしを使わない人に、PyTorch など重い依存(イメージの大半)をインストールさせないため
+  - バックエンドのイメージは3種類から選んでビルドする。自動検出・文字起こしを使わない人に、PyTorch など重い依存(イメージの大半)をインストールさせないため
     - `full`(既定): 自動検出・文字起こしまで使える。`requirements.txt` と `requirements-ml.txt`(torch・silero-vad・transformers)を入れる
     - `base`: 自動検出・文字起こしなし。`requirements.txt` だけを入れる
-    - Dockerfile は multi-stage にし、`full` は `base` と同じ依存の段階の上に積む。共通部分のキャッシュを使い、後から `full` に切り替えても追加分だけをインストールするため。アプリのコードは依存をインストールした後にコピーし、コードを変えても依存を入れ直さないようにする
-    - どちらにするかは `./build.sh --base` / `--full` で選び、`.env` の `BACKEND_TARGET` に残す(compose の `build.target` が読む)。次に引数なしで作り直したときに既定へ戻り、使わない人に重いインストールが走らないようにするため。独自の設定ファイルにしないのは、compose が `.env` を自動で読み、手で `docker compose` を打っても同じ種類になるため
-    - 途中で切り替えるときは、もう一方を指定して作り直す。バックエンドが再起動するので、アップロードした音声は消える(ラベルは書き出してから切り替える)。設定はブラウザのlocalStorageにあるので残る
+    - `gpu`: `full` と同じ機能を、NVIDIA GPU で動かす。`full` との違いは PyTorch を CUDA 版で入れることだけ。CPU では文字起こしに1区間あたり十数秒かかり、GPU を持つ人には待ち時間を大きく減らせるため。イメージが数GB大きくなり、ホストにも準備が要るので、既定にはしない
+    - Dockerfile は multi-stage にし、`full` と `gpu` は `base` と同じ依存の段階の上に積む。共通部分のキャッシュを使い、後から `full` などに切り替えても追加分だけをインストールするため。`gpu` を `full` の上に積まないのは、CPU 版と CUDA 版の PyTorch を二重に入れないため。アプリのコードは依存をインストールした後にコピーし、コードを変えても依存を入れ直さないようにする
+    - どれにするかは `./build.sh --base` / `--full` / `--gpu` で選び、`.env` の `BACKEND_TARGET` に残す(compose の `build.target` が読む)。次に引数なしで作り直したときに既定へ戻り、使わない人に重いインストールが走らないようにするため。独自の設定ファイルにしないのは、compose が `.env` を自動で読み、手で `docker compose` を打っても同じ種類になるため
+    - 途中で切り替えるときは、別の種類を指定して作り直す。バックエンドが再起動するので、アップロードした音声は消える(ラベルは書き出してから切り替える)。設定はブラウザのlocalStorageにあるので残る
+  - `gpu` の作り方
+    - 対象は Linux のホストだけにする(Windows の WSL2 と Mac は対象外)。研究室で GPU を使うのは Linux のサーバーが主で、WSL2 まで対象にすると下の版の選び方を自前で書く必要が出るため
+    - PyTorch の CUDA 版は、uv の `--torch-backend auto` でホストの NVIDIA ドライバーに合わせて選ぶ。ドライバーの版によって動く CUDA 版が違い(CUDA 13 はドライバー 580 以上、CUDA 12 は 525 以上)、1つに固定すると古いドライバーのサーバーか新しい GPU のどちらかで動かなくなるため。uv は `/sys/module/nvidia/version` からドライバーの版を読み、`docker build` の中からもホストのカーネルの `/sys` が見えるので、ビルド中でも判定できる。版の対応表を自前で持たないのは、uv が新しい CUDA に対応すれば uv を上げるだけで済むため
+      - 判定が外れたとき(ドライバーは新しいが GPU が古い、など)のために、`.env` に `TORCH_BACKEND=cu126` のように書けばその版で入れる。入るのはその CUDA 版で出ている最新の PyTorch なので、版が古くなることがある(2026年11月時点で cu126 は 2.14.1、cu132 は 2.15.0)
+      - ビルドのキャッシュはドライバーの版を知らないため、`build.sh` がホストの `/sys/module/nvidia/version` を読んでビルドの引数(`NVIDIA_DRIVER_VERSION`)に渡す。ドライバーを更新したら、次の `build.sh` で PyTorch を選び直すようにするため
+      - 判定できずに CPU 版が入っても、ビルドは止めない。アプリは CPU で動くため。代わりに `build.sh` の最後に、起動したコンテナで GPU を使えるかと、入った PyTorch が CPU 版か CUDA 版かを表示する。ビルドのログは流れて読まれず、キャッシュが使われると出ないので、毎回必ず目に入る最後の表示にする。ドライバーが古くて CUDA 版が動かないときもここで分かる
+    - ベースイメージは `full` と同じ `python:3.11-slim` のままにする。CUDA のライブラリは PyTorch が依存(`nvidia-*`)として入れるので、CUDA 入りのイメージは要らない。ホストに要るのは NVIDIA ドライバーと NVIDIA Container Toolkit
+    - GPU をコンテナに渡す設定(`deploy.resources.reservations.devices`)と上のビルドの引数は `docker-compose.gpu.yml` に分け、`gpu` のときだけ重ねる。この設定は、NVIDIA のランタイムがない環境ではコンテナの起動自体を失敗させるため、`base` / `full` の利用者に影響を出さないようにする。profiles にしないのは、バックエンドのサービスを GPU 用と2つに分けることになり、ポートやフロントの `depends_on` を両方に書く必要があるため
+    - 重ねるファイルは、`build.sh --gpu` が `.env` の `COMPOSE_FILE` に書く(`BACKEND_TARGET` と同じく、手で `docker compose` を打っても同じ構成になるようにするため)。ほかの種類で作り直すときは `.env` から消す
+    - アプリは種類を見ず、CUDA が使えるか(`torch.cuda.is_available()`)で決める。使えれば Whisper を GPU の fp16 で、使えなければ CPU の fp32 で動かす。種類ごとに分岐を書かずに済み、`gpu` で作っても GPU を使えないときは CPU で動き続けるため
+    - Silero VAD は GPU でも CPU で動かす。モデルが小さく(約2MB)、数十msの窓を1つずつ順に判定するので、窓ごとに GPU とやりとりする手間の方が大きいため(Silero VAD 自体も CPU の1スレッドで速く動くように作られている)
+    - GPU で動いているかは `GET /api/features` で返さない。画面に出す機能は変わらないため(UIの最小主義)。確かめ方は docs に書く
   - 作ることと起動・停止を、スクリプトで分ける。種類を選ぶのは作るときだけで、毎日の起動では気にしなくて済むようにするため
     - `build.sh`: イメージを作り、コンテナを作り直して起動する。種類を選ぶのはここだけ
     - `start.sh`: 作ってあるコンテナをそのまま起動する(`docker compose up -d`)。Docker Desktop の再生ボタンと同じ結果にし、どちらで起動しても挙動が変わらないようにするため。まだ何もないときだけ、`.env` の種類で作ってから起動する
@@ -495,7 +508,8 @@ audio-labeler/
 │   ├── package.json
 │   └── Dockerfile
 ├── docker-compose.yml         # バックエンドのビルドターゲットは .env の BACKEND_TARGET で選ぶ
-├── build.sh                   # イメージを作り、コンテナを作り直して起動(--base / --full でビルドの種類を選ぶ)
+├── docker-compose.gpu.yml     # gpu のときだけ重ね、GPU をバックエンドに渡す(PyTorch の CUDA 版を選ぶ引数も)
+├── build.sh                   # イメージを作り、コンテナを作り直して起動(--base / --full / --gpu でビルドの種類を選ぶ)
 ├── start.sh                   # 作ってあるコンテナの起動(Docker Desktop の再生ボタンと同じ)
 ├── stop.sh                    # コンテナを消さずに停止
 └── PLAN.md

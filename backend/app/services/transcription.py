@@ -28,6 +28,10 @@ _lock = threading.Lock()
 _FALLBACK_TEMPERATURES = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 _COMPRESSION_RATIO_THRESHOLD = 4.0
 
+# NVIDIA GPU を使えるとき(gpu のビルド。PLAN.md 6章)は GPU の fp16 で、使えなければ CPU の fp32 で動かす。
+# CPU は fp16 の計算が遅く、GPU は fp16 でも精度がほとんど落ちずに速くなるため
+_DEVICE, _DTYPE = ("cuda", torch.float16) if torch.cuda.is_available() else ("cpu", torch.float32)
+
 
 @dataclass(frozen=True)
 class PreparedAudio:
@@ -43,7 +47,7 @@ def _get_pipeline(model_id: str) -> AutomaticSpeechRecognitionPipeline:
         # 先に参照を外し、2つ目のモデルを読み込む間に前のモデルとメモリを二重に使わないようにする
         _loaded = None
         try:
-            asr = pipeline("automatic-speech-recognition", model=model_id, device="cpu", dtype=torch.float32)
+            asr = pipeline("automatic-speech-recognition", model=model_id, device=_DEVICE, dtype=_DTYPE)
         except (OSError, ValueError) as e:
             raise TranscriptionError(
                 f"モデル「{model_id}」を読み込めません。設定のモデルIDと、ネットワークにつながっているかを確認してください。"
